@@ -3,84 +3,194 @@
     ViewData["Title"] = "Tickets";
     var clients = Model.Clients.OrderBy(c => c.Name).ToList();
     var technicians = Model.Technicians.Where(t => t.IsActive).OrderBy(t => t.Name).ToList();
+    var subjects = new[]
+    {
+        "Blinking LOS",
+        "No power modem",
+        "Reset modem",
+        "Slow connection",
+        "Wire problem",
+        "Wifi connected, no internet"
+    };
+    var ticketTypes = new[] { "Repair", "Billing", "Outage" };
+    var priorities = new[] { "Normal", "High", "Urgent" };
 }
 
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-    <div>
-        <h1 class="page-title h3 mb-1">Tickets</h1>
-        <p class="text-body-secondary mb-0">Create and monitor customer support tickets.</p>
-    </div>
-    <span class="badge text-bg-light border">@Model.Tickets.Count tickets</span>
-</div>
-
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-header bg-white fw-semibold">Create ticket</div>
-    <div class="card-body">
-        <form asp-action="AddTicket" method="post" class="row g-3">
-            <div class="col-lg-4">
-                <label class="form-label">Client</label>
-                <select class="form-select" name="ClientId" required>
-                    <option value="">Choose client</option>
-                    @foreach (var client in clients)
-                    {
-                        <option value="@client.Id">@client.Name - @client.Area</option>
-                    }
-                </select>
-            </div>
-            <div class="col-lg-4"><label class="form-label">Subject</label><input class="form-control" name="Subject" required /></div>
-            <div class="col-md-2">
-                <label class="form-label">Type</label>
-                <select class="form-select" name="Type"><option>Repair</option><option>Installation</option><option>Billing</option><option>Outage</option></select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Priority</label>
-                <select class="form-select" name="Priority"><option>Normal</option><option>High</option><option>Urgent</option></select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Assigned To</label>
-                <select class="form-select" name="AssignedTo">
-                    <option value="">Unassigned</option>
-                    @foreach (var technician in technicians)
-                    {
-                        <option>@technician.Name</option>
-                    }
-                </select>
-            </div>
-            <div class="col-md-3"><label class="form-label">Created On</label><input class="form-control" name="CreatedOn" type="date" value="@DateTime.Today.ToString("yyyy-MM-dd")" /></div>
-            <div class="col-md-4"><label class="form-label">Remarks</label><input class="form-control" name="Remarks" /></div>
-            <div class="col-md-2 d-grid"><button class="btn btn-primary mt-md-4">Create ticket</button></div>
-        </form>
-    </div>
-</div>
-
-<div class="card border-0 shadow-sm">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-sm table-hover align-middle mb-0">
-                <thead class="table-light"><tr><th>Date</th><th>Client</th><th>Subject</th><th>Type</th><th>Priority</th><th>Status</th><th>Assigned</th><th>Remarks</th></tr></thead>
-                <tbody>
-                @if (!Model.Tickets.Any())
-                {
-                    <tr><td colspan="8" class="text-center text-secondary py-4">No tickets yet.</td></tr>
-                }
-                @foreach (var ticket in Model.Tickets.OrderByDescending(t => t.CreatedOn).ThenByDescending(t => t.Id))
-                {
-                    var clientName = Model.Clients.FirstOrDefault(c => c.Id == ticket.ClientId)?.Name ?? $"Client #{ticket.ClientId}";
-                    var priorityClass = ticket.Priority.Equals("Urgent", StringComparison.OrdinalIgnoreCase) ? "text-bg-danger" :
-                        ticket.Priority.Equals("High", StringComparison.OrdinalIgnoreCase) ? "text-bg-warning" : "text-bg-secondary";
-                    <tr>
-                        <td>@ticket.CreatedOn</td>
-                        <td class="fw-semibold">@clientName</td>
-                        <td>@ticket.Subject</td>
-                        <td>@ticket.Type</td>
-                        <td><span class="badge @priorityClass">@ticket.Priority</span></td>
-                        <td>@ticket.Status</td>
-                        <td>@ticket.AssignedTo</td>
-                        <td>@ticket.Remarks</td>
-                    </tr>
-                }
-                </tbody>
-            </table>
+<div class="page-header d-print-none mb-3">
+    <div class="row g-2 align-items-center">
+        <div class="col">
+            <div class="page-pretitle">Technician</div>
+            <h1 class="page-title">Tickets</h1>
+            <div class="text-secondary mt-1">Create and monitor customer support tickets.</div>
         </div>
+        <div class="col-auto ms-auto d-print-none">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTicketModal">
+                <i class="ti ti-plus me-1"></i>Create ticket
+            </button>
+        </div>
+    </div>
+</div>
+
+@if (TempData["TicketError"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row row-cards mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Total Tickets</div>
+                <div class="h2 mb-0">@Model.Tickets.Count</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Open</div>
+                <div class="h2 mb-0 text-primary">@Model.Tickets.Count(t => t.Status.Equals("Open", StringComparison.OrdinalIgnoreCase))</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">High Priority</div>
+                <div class="h2 mb-0 text-orange">@Model.Tickets.Count(t => t.Priority.Equals("High", StringComparison.OrdinalIgnoreCase))</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Urgent</div>
+                <div class="h2 mb-0 text-danger">@Model.Tickets.Count(t => t.Priority.Equals("Urgent", StringComparison.OrdinalIgnoreCase))</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title mb-0">Ticket List</h2>
+    </div>
+    <div class="table-responsive">
+        <table class="table card-table table-vcenter">
+            <thead>
+                <tr>
+                    <th>Created On</th>
+                    <th>Client</th>
+                    <th>Subject</th>
+                    <th>Type</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Assigned To</th>
+                    <th>Remarks</th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (!Model.Tickets.Any())
+            {
+                <tr><td colspan="8" class="text-center text-secondary py-4">No tickets yet.</td></tr>
+            }
+            @foreach (var ticket in Model.Tickets.OrderByDescending(t => t.CreatedOn).ThenByDescending(t => t.Id))
+            {
+                var clientName = Model.Clients.FirstOrDefault(c => c.Id == ticket.ClientId)?.Name ?? $"Client #{ticket.ClientId}";
+                var priorityClass = ticket.Priority.Equals("Urgent", StringComparison.OrdinalIgnoreCase)
+                    ? "badge bg-danger-lt text-danger"
+                    : ticket.Priority.Equals("High", StringComparison.OrdinalIgnoreCase)
+                        ? "badge bg-warning-lt text-warning"
+                        : "badge bg-secondary-lt text-secondary";
+                <tr>
+                    <td class="text-secondary">@ticket.CreatedOn.ToString("MMM dd, yyyy")</td>
+                    <td class="fw-semibold">@clientName</td>
+                    <td>@ticket.Subject</td>
+                    <td>@ticket.Type</td>
+                    <td><span class="@priorityClass">@ticket.Priority</span></td>
+                    <td><span class="badge bg-primary-lt text-primary">@ticket.Status</span></td>
+                    <td>@ticket.AssignedTo</td>
+                    <td>@ticket.Remarks</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal modal-blur fade" id="createTicketModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <form asp-action="AddTicket" method="post" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create ticket</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <label class="form-label required">Client</label>
+                        <select class="form-select" name="ClientId" required>
+                            <option value="" selected>Choose client</option>
+                            @foreach (var client in clients)
+                            {
+                                <option value="@client.Id">@client.Name - @client.Area</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label required">Subject</label>
+                        <select class="form-select" name="Subject" required>
+                            <option value="" selected>Select a reason</option>
+                            @foreach (var subject in subjects)
+                            {
+                                <option value="@subject">@subject</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label required">Type</label>
+                        <select class="form-select" name="Type" required>
+                            @foreach (var type in ticketTypes)
+                            {
+                                <option value="@type">@type</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label required">Assigned To</label>
+                        <select class="form-select" name="AssignedTo" required>
+                            <option value="" selected>Select technician</option>
+                            @foreach (var technician in technicians)
+                            {
+                                <option value="@technician.Name">@technician.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label required">Created On</label>
+                        <input class="form-control" name="CreatedOn" type="date" value="@DateTime.Today.ToString("yyyy-MM-dd")" required />
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label required">Priority</label>
+                        <select class="form-select" name="Priority" required>
+                            @foreach (var priority in priorities)
+                            {
+                                <option value="@priority">@priority</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Remarks</label>
+                        <textarea class="form-control" name="Remarks" rows="3"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary">
+                    <i class="ti ti-device-floppy me-1"></i>Create ticket
+                </button>
+            </div>
+        </form>
     </div>
 </div>

@@ -918,6 +918,24 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddTicket(SupportTicket ticket)
     {
+        if (ticket.ClientId <= 0)
+        {
+            TempData["TicketError"] = "Please choose a client for the ticket.";
+            return RedirectToAction(nameof(Tickets));
+        }
+
+        if (string.IsNullOrWhiteSpace(ticket.Subject))
+        {
+            TempData["TicketError"] = "Please select a ticket reason.";
+            return RedirectToAction(nameof(Tickets));
+        }
+
+        if (string.IsNullOrWhiteSpace(ticket.AssignedTo))
+        {
+            TempData["TicketError"] = "Please select a technician.";
+            return RedirectToAction(nameof(Tickets));
+        }
+
         var data = await store.GetAsync();
         ticket.Id = NextId(data.Tickets.Select(t => t.Id));
         ticket.Subject = string.IsNullOrWhiteSpace(ticket.Subject) ? "Customer ticket" : ticket.Subject.Trim();
