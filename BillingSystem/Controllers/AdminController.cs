@@ -661,8 +661,23 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddJob(JobTicket job)
     {
+        if (job.ClientId <= 0)
+        {
+            TempData["JobError"] = "Please choose a client for the job.";
+            return RedirectToAction(nameof(Jobs));
+        }
+
+        if (string.IsNullOrWhiteSpace(job.Type))
+        {
+            TempData["JobError"] = "Please select a job type.";
+            return RedirectToAction(nameof(Jobs));
+        }
+
         var data = await store.GetAsync();
         job.Id = NextId(data.Jobs.Select(j => j.Id));
+        job.Type = job.Type.Trim();
+        job.Status = string.IsNullOrWhiteSpace(job.Status) ? "Open" : job.Status;
+        job.Remarks = job.Remarks?.Trim() ?? "";
         data.Jobs.Add(job);
         await store.SaveAsync(data);
         return RedirectToAction(nameof(Jobs));

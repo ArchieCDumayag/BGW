@@ -3,64 +3,173 @@
     ViewData["Title"] = "Jobs";
     var clients = ViewBag.Clients as IReadOnlyList<Client> ?? Array.Empty<Client>();
     var technicians = ViewBag.Technicians as IReadOnlyList<Technician> ?? Array.Empty<Technician>();
+    var jobTypes = new[]
+    {
+        "Install",
+        "Repair",
+        "Relocate",
+        "Collection",
+        "Fiber Break",
+        "Mainline Maintenance",
+        "Trimming",
+        "Disconnect"
+    };
 }
 
-<h1 class="page-title h3 mb-3">Installation & Repair Jobs</h1>
-
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-header bg-white fw-semibold">Create job</div>
-    <div class="card-body">
-        <form asp-action="AddJob" method="post" class="row g-3">
-            <div class="col-lg-4">
-                <label class="form-label">Client</label>
-                <select class="form-select" name="ClientId" required>
-                    <option value="">Choose client</option>
-                    @foreach (var client in clients)
-                    {
-                        <option value="@client.Id">@client.Name - @client.Area @client.Zone</option>
-                    }
-                </select>
-            </div>
-            <div class="col-md-2"><label class="form-label">Type</label><select class="form-select" name="Type"><option>Repair</option><option>Installation</option><option>Collection</option></select></div>
-            <div class="col-md-2">
-                <label class="form-label">Technician</label>
-                <select class="form-select" name="TechnicianId">
-                    <option value="">Unassigned</option>
-                    @foreach (var technician in technicians)
-                    {
-                        <option value="@technician.Id">@technician.Name</option>
-                    }
-                </select>
-            </div>
-            <div class="col-md-2"><label class="form-label">Schedule</label><input class="form-control" name="ScheduledOn" type="date" value="@DateTime.Today.ToString("yyyy-MM-dd")" /></div>
-            <div class="col-md-2 d-grid"><button class="btn btn-primary mt-md-4">Create job</button></div>
-            <div class="col-12"><label class="form-label">Remarks</label><input class="form-control" name="Remarks" /></div>
-        </form>
+<div class="page-header d-print-none mb-3">
+    <div class="row g-2 align-items-center">
+        <div class="col">
+            <div class="page-pretitle">Technician</div>
+            <h1 class="page-title">Jobs</h1>
+            <div class="text-secondary mt-1">Create, assign, and monitor field work schedules.</div>
+        </div>
+        <div class="col-auto ms-auto d-print-none">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createJobModal">
+                <i class="ti ti-plus me-1"></i>Create job
+            </button>
+        </div>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-sm table-hover align-middle mb-0">
-                <thead class="table-light"><tr><th>Date</th><th>Type</th><th>Client</th><th>Technician</th><th>Status</th><th>Remarks</th></tr></thead>
-                <tbody>
-                @foreach (var job in Model)
-                {
-                    var clientName = clients.FirstOrDefault(c => c.Id == job.ClientId)?.Name ?? $"Client #{job.ClientId}";
-                    var technicianName = technicians.FirstOrDefault(t => t.Id == job.TechnicianId)?.Name ?? "Unassigned";
-                    var badgeClass = job.Status.Equals("Done", StringComparison.OrdinalIgnoreCase) ? "text-bg-success" : "text-bg-primary";
-                    <tr>
-                        <td>@job.ScheduledOn</td>
-                        <td>@job.Type</td>
-                        <td class="fw-medium">@clientName</td>
-                        <td>@technicianName</td>
-                        <td><span class="badge rounded-pill @badgeClass">@job.Status</span></td>
-                        <td>@job.Remarks</td>
-                    </tr>
-                }
-                </tbody>
-            </table>
+@if (TempData["JobError"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row row-cards mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Total Jobs</div>
+                <div class="h2 mb-0">@Model.Count</div>
+            </div>
         </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Open</div>
+                <div class="h2 mb-0 text-primary">@Model.Count(j => j.Status.Equals("Open", StringComparison.OrdinalIgnoreCase))</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Scheduled Today</div>
+                <div class="h2 mb-0 text-orange">@Model.Count(j => j.ScheduledOn == DateOnly.FromDateTime(DateTime.Today))</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Done</div>
+                <div class="h2 mb-0 text-success">@Model.Count(j => j.Status.Equals("Done", StringComparison.OrdinalIgnoreCase))</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title mb-0">Job List</h2>
+    </div>
+    <div class="table-responsive">
+        <table class="table card-table table-vcenter">
+            <thead>
+                <tr>
+                    <th>Schedule</th>
+                    <th>Job Type</th>
+                    <th>Client</th>
+                    <th>Technician</th>
+                    <th>Status</th>
+                    <th>Remarks</th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (!Model.Any())
+            {
+                <tr>
+                    <td colspan="6" class="text-center text-secondary py-4">No jobs created yet.</td>
+                </tr>
+            }
+            @foreach (var job in Model)
+            {
+                var clientName = clients.FirstOrDefault(c => c.Id == job.ClientId)?.Name ?? $"Client #{job.ClientId}";
+                var technicianName = technicians.FirstOrDefault(t => t.Id == job.TechnicianId)?.Name ?? "Unassigned";
+                var badgeClass = job.Status.Equals("Done", StringComparison.OrdinalIgnoreCase)
+                    ? "badge bg-success-lt text-success"
+                    : "badge bg-primary-lt text-primary";
+                <tr>
+                    <td class="text-secondary">@job.ScheduledOn.ToString("MMM dd, yyyy")</td>
+                    <td class="fw-semibold">@job.Type</td>
+                    <td>@clientName</td>
+                    <td>@technicianName</td>
+                    <td><span class="@badgeClass">@job.Status</span></td>
+                    <td>@job.Remarks</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal modal-blur fade" id="createJobModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <form asp-action="AddJob" method="post" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create job</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <label class="form-label required">Client</label>
+                        <select class="form-select" name="ClientId" required>
+                            <option value="">Choose client</option>
+                            @foreach (var client in clients)
+                            {
+                                <option value="@client.Id">@client.Name - @client.Area @client.Zone</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label required">Job type</label>
+                        <select class="form-select" name="Type" required>
+                            <option value="" selected>Select type</option>
+                            @foreach (var type in jobTypes)
+                            {
+                                <option value="@type">@type</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label">Technician</label>
+                        <select class="form-select" name="TechnicianId">
+                            <option value="">Tech list</option>
+                            @foreach (var technician in technicians)
+                            {
+                                <option value="@technician.Id">@technician.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label required">Schedule</label>
+                        <input class="form-control" name="ScheduledOn" type="date" value="@DateTime.Today.ToString("yyyy-MM-dd")" required />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Remarks</label>
+                        <textarea class="form-control" name="Remarks" rows="3"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary">
+                    <i class="ti ti-device-floppy me-1"></i>Create job
+                </button>
+            </div>
+        </form>
     </div>
 </div>
