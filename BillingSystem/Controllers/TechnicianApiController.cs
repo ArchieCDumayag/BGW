@@ -41,6 +41,24 @@ public sealed class TechnicianApiController(IBillingStore store) : ControllerBas
         return Ok(jobs);
     }
 
+    [HttpGet("tickets")]
+    public async Task<IActionResult> Tickets([FromQuery] int technicianId = 1)
+    {
+        var data = await store.GetAsync();
+        var tickets = data.Tickets
+            .Where(ticket => ticket.AssignedTechnicianId == technicianId)
+            .OrderBy(ticket => ticket.Status.Equals("Closed", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(ticket => ticket.Priority.Equals("Urgent", StringComparison.OrdinalIgnoreCase))
+            .ThenBy(ticket => ticket.CreatedOn)
+            .Select(ticket => new
+            {
+                Ticket = ticket,
+                Client = data.Clients.FirstOrDefault(client => client.Id == ticket.ClientId)
+            });
+
+        return Ok(tickets);
+    }
+
     [HttpGet("clients/{id:int}")]
     public async Task<IActionResult> ClientDetails(int id)
     {

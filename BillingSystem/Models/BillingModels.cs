@@ -429,4 +429,5 @@ public sealed class TechnicianPortalViewModel
     public int TechnicianId { get; init; }
     public IReadOnlyList<Client> AssignedClients { get; init; } = [];
     public IReadOnlyList<JobTicket> Jobs { get; init; } = [];
+    public IReadOnlyList<SupportTicket> Tickets { get; init; } = [];
 }

@@ -21,6 +21,9 @@
     <div class="col-sm-6 col-lg-3">
         <div class="card card-sm"><div class="card-body"><div class="subheader">Open jobs</div><div class="h1 mb-0">@Model.Jobs.Count(j => j.Status != "Done")</div></div></div>
     </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm"><div class="card-body"><div class="subheader">Open tickets</div><div class="h1 mb-0">@Model.Tickets.Count(t => !t.Status.Equals("Closed", StringComparison.OrdinalIgnoreCase))</div></div></div>
+    </div>
 </div>
 
 <div class="row row-cards">
@@ -92,5 +95,48 @@
                 }
             </div>
         </div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header"><h2 class="card-title">Assigned Tickets</h2></div>
+    <div class="table-responsive">
+        <table class="table table-vcenter card-table table-hover">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Client</th>
+                    <th>Subject</th>
+                    <th>Type</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Remarks</th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (!Model.Tickets.Any())
+            {
+                <tr><td colspan="7" class="text-center text-secondary py-4">No assigned tickets yet.</td></tr>
+            }
+            @foreach (var ticket in Model.Tickets)
+            {
+                clientsById.TryGetValue(ticket.ClientId, out var client);
+                var priorityClass = ticket.Priority.Equals("Urgent", StringComparison.OrdinalIgnoreCase)
+                    ? "bg-red-lt"
+                    : ticket.Priority.Equals("High", StringComparison.OrdinalIgnoreCase)
+                        ? "bg-yellow-lt"
+                        : "bg-secondary-lt";
+                <tr>
+                    <td class="text-secondary">@ticket.CreatedOn</td>
+                    <td class="fw-semibold">@(client?.Name ?? $"Client #{ticket.ClientId}")</td>
+                    <td>@ticket.Subject</td>
+                    <td>@ticket.Type</td>
+                    <td><span class="badge @priorityClass">@ticket.Priority</span></td>
+                    <td><span class="badge bg-blue-lt">@ticket.Status</span></td>
+                    <td>@ticket.Remarks</td>
+                </tr>
+            }
+            </tbody>
+        </table>
     </div>
 </div>

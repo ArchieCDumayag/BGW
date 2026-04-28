@@ -12,9 +12,9 @@ public sealed class TechnicianPortalController(IBillingStore store) : Controller
     public async Task<IActionResult> Index()
     {
         var data = await store.GetAsync();
-        var technicianId = GetTechnicianId();
-        var technician = data.Technicians.FirstOrDefault(t => t.Id == technicianId);
         var role = User.FindFirstValue(ClaimTypes.Role) ?? "Technician";
+        var technicianId = GetTechnicianId(role);
+        var technician = data.Technicians.FirstOrDefault(t => t.Id == technicianId);
         var clients = technician is null ? Enumerable.Empty<Client>() : data.Clients.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(technician?.Area) &&
@@ -23,10 +23,14 @@ public sealed class TechnicianPortalController(IBillingStore store) : Controller
             clients = clients.Where(c => c.Area.Equals(technician.Area, StringComparison.OrdinalIgnoreCase));
         }
 
-        var jobs = data.Jobs.AsEnumerable();
-        jobs = technicianId > 0
-            ? jobs.Where(j => j.TechnicianId == technicianId || j.TechnicianId is null)
-            : jobs.Where(j => j.TechnicianId is null);
+        var isTechnician = role.Equals("Technician", StringComparison.OrdinalIgnoreCase);
+        var jobs = isTechnician && technicianId > 0
+            ? data.Jobs.Where(j => j.TechnicianId == technicianId || j.TechnicianId is null)
+            : data.Jobs.Where(j => j.TechnicianId is null);
+
+        var tickets = isTechnician && technicianId > 0
+            ? data.Tickets.Where(ticket => ticket.AssignedTechnicianId == technicianId)
+            : Enumerable.Empty<SupportTicket>();
 
         var model = new TechnicianPortalViewModel
         {
@@ -37,6 +41,11 @@ public sealed class TechnicianPortalController(IBillingStore store) : Controller
             Jobs = jobs
                 .OrderBy(j => j.Status == "Done")
                 .ThenBy(j => j.ScheduledOn)
+                .ToList(),
+            Tickets = tickets
+                .OrderBy(ticket => ticket.Status.Equals("Closed", StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(ticket => ticket.Priority.Equals("Urgent", StringComparison.OrdinalIgnoreCase))
+                .ThenBy(ticket => ticket.CreatedOn)
                 .ToList()
         };
 
@@ -88,10 +97,16 @@ public sealed class TechnicianPortalController(IBillingStore store) : Controller
         return RedirectToAction(nameof(Index));
     }
 
-    private int GetTechnicianId()
+    private int GetTechnicianId(string role)
     {
-        return int.TryParse(User.FindFirstValue("TechnicianId"), out var technicianId)
-            ? technicianId
+        if (int.TryParse(User.FindFirstValue("TechnicianId"), out var technicianId) && technicianId > 0)
+        {
+            return technicianId;
+        }
+
+        return role.Equals("Technician", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId)
+            ? userId
             : 0;
     }
 }
