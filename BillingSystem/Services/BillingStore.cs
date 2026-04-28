@@ -199,6 +199,12 @@ public sealed class JsonBillingStore(IWebHostEnvironment environment) : IBilling
 
         data.Settings.SemaphoreApiKey ??= "";
         data.Settings.SemaphoreSenderName ??= "";
+        data.Settings.CompanyName = string.IsNullOrWhiteSpace(data.Settings.CompanyName) ? "Billing System" : data.Settings.CompanyName;
+        data.Settings.SystemDisplayName = string.IsNullOrWhiteSpace(data.Settings.SystemDisplayName)
+            ? data.Settings.CompanyName
+            : data.Settings.SystemDisplayName;
+        data.Settings.CompanyLogoUrl ??= "";
+        data.Settings.BrowserLogoUrl ??= "";
         data.Settings.MikrotikHost ??= "";
         if (data.Settings.MikrotikApiPort <= 0)
         {

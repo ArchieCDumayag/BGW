@@ -9,6 +9,9 @@
     <div class="card-header bg-white fw-semibold">General settings</div>
     <div class="card-body">
         <form asp-action="Settings" method="post" class="row g-3">
+            <input type="hidden" asp-for="CompanyLogoUrl" />
+            <input type="hidden" asp-for="BrowserLogoUrl" />
+            <div class="col-md-6"><label class="form-label">System display name</label><input class="form-control" asp-for="SystemDisplayName" /></div>
             <div class="col-md-6"><label class="form-label">Company name</label><input class="form-control" asp-for="CompanyName" /></div>
             <div class="col-md-3"><label class="form-label">Monthly due day</label><input class="form-control" asp-for="MonthlyDueDay" type="number" min="1" max="31" /></div>
             <div class="col-md-3"><label class="form-label">Currency</label><input class="form-control" asp-for="Currency" /></div>

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using System.Text.Json;
 using BillingSystem.Models;
 using BillingSystem.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -175,7 +176,7 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
 
     private void BackupBillingDataFile(string reason)
     {
-        var dataPath = Path.Combine(environment.ContentRootPath, "Data", "billing-data.json");
+        var dataPath = BillingDataPath();
         if (!System.IO.File.Exists(dataPath))
         {
             return;
@@ -186,6 +187,84 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
             "Data",
             $"billing-data.{reason}-backup-{DateTime.Now:yyyyMMdd-HHmmss-fff}.json");
         System.IO.File.Copy(dataPath, backupPath);
+    }
+
+    private string BillingDataPath()
+    {
+        return Path.Combine(environment.ContentRootPath, "Data", "billing-data.json");
+    }
+
+    private async Task<SystemSettings> MergeSettingsAsync(
+        SystemSettings current,
+        SystemSettings posted,
+        IFormFile? companyLogoFile,
+        IFormFile? browserLogoFile)
+    {
+        posted.CompanyName = string.IsNullOrWhiteSpace(posted.CompanyName) ? "Billing System" : posted.CompanyName.Trim();
+        posted.SystemDisplayName = string.IsNullOrWhiteSpace(posted.SystemDisplayName)
+            ? posted.CompanyName
+            : posted.SystemDisplayName.Trim();
+        posted.CompanyLogoUrl = string.IsNullOrWhiteSpace(posted.CompanyLogoUrl) ? current.CompanyLogoUrl : posted.CompanyLogoUrl.Trim();
+        posted.BrowserLogoUrl = string.IsNullOrWhiteSpace(posted.BrowserLogoUrl) ? current.BrowserLogoUrl : posted.BrowserLogoUrl.Trim();
+        posted.SmsReminderTemplate = posted.SmsReminderTemplate?.Trim() ?? "";
+        posted.Currency = string.IsNullOrWhiteSpace(posted.Currency) ? "PHP" : posted.Currency.Trim();
+        posted.SemaphoreApiKey = posted.SemaphoreApiKey?.Trim() ?? "";
+        posted.SemaphoreSenderName = posted.SemaphoreSenderName?.Trim() ?? "";
+        posted.MikrotikHost = posted.MikrotikHost?.Trim() ?? "";
+        posted.MikrotikApiUser = posted.MikrotikApiUser?.Trim() ?? "";
+        posted.MikrotikApiPassword = string.IsNullOrWhiteSpace(posted.MikrotikApiPassword)
+            ? current.MikrotikApiPassword
+            : posted.MikrotikApiPassword;
+        posted.GCashAccountName = posted.GCashAccountName?.Trim() ?? "";
+        posted.GCashAccountNumber = posted.GCashAccountNumber?.Trim() ?? "";
+        posted.GCashQrCodeUrl = posted.GCashQrCodeUrl?.Trim() ?? "";
+
+        if (companyLogoFile is { Length: > 0 })
+        {
+            posted.CompanyLogoUrl = await SaveBrandingFileAsync(companyLogoFile, "company-logo");
+        }
+
+        if (browserLogoFile is { Length: > 0 })
+        {
+            posted.BrowserLogoUrl = await SaveBrandingFileAsync(browserLogoFile, "browser-logo");
+        }
+
+        return posted;
+    }
+
+    private async Task<string> SaveBrandingFileAsync(IFormFile file, string name)
+    {
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var allowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".webp",
+            ".ico",
+            ".svg"
+        };
+
+        if (!allowedExtensions.Contains(extension))
+        {
+            throw new InvalidOperationException("Branding files must be image files: png, jpg, jpeg, gif, webp, ico, or svg.");
+        }
+
+        if (file.Length > 2 * 1024 * 1024)
+        {
+            throw new InvalidOperationException("Branding image must be 2 MB or smaller.");
+        }
+
+        var uploadRoot = Path.Combine(environment.WebRootPath, "uploads", "branding");
+        Directory.CreateDirectory(uploadRoot);
+        var fileName = $"{name}-{DateTime.Now:yyyyMMddHHmmssfff}{extension}";
+        var filePath = Path.Combine(uploadRoot, fileName);
+
+        await using var stream = System.IO.File.Create(filePath);
+        await file.CopyToAsync(stream);
+
+        return $"/uploads/branding/{fileName}";
     }
 
     private static void ClearClientOperationalRecords(BillingData data)
@@ -984,11 +1063,79 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SettingsIntegrations(SystemSettings settings)
+    public async Task<IActionResult> SettingsIntegrations(SystemSettings settings, IFormFile? companyLogoFile, IFormFile? browserLogoFile)
     {
         var data = await store.GetAsync();
-        data.Settings = settings;
-        await store.SaveAsync(data);
+        try
+        {
+            data.Settings = await MergeSettingsAsync(data.Settings, settings, companyLogoFile, browserLogoFile);
+            await store.SaveAsync(data);
+            TempData["SettingsSuccess"] = "Settings saved.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            TempData["SettingsError"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(SettingsIntegrations));
+    }
+
+    public IActionResult BackupDatabase()
+    {
+        var dataPath = BillingDataPath();
+        if (!System.IO.File.Exists(dataPath))
+        {
+            TempData["SettingsError"] = "Database file was not found.";
+            return RedirectToAction(nameof(SettingsIntegrations));
+        }
+
+        var fileName = $"billing-data-backup-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+        return PhysicalFile(dataPath, "application/json", fileName);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RestoreDatabase(IFormFile? backupFile)
+    {
+        if (backupFile is null || backupFile.Length == 0)
+        {
+            TempData["SettingsError"] = "Please choose a backup JSON file to restore.";
+            return RedirectToAction(nameof(SettingsIntegrations));
+        }
+
+        if (!Path.GetExtension(backupFile.FileName).Equals(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            TempData["SettingsError"] = "Restore file must be a .json database backup.";
+            return RedirectToAction(nameof(SettingsIntegrations));
+        }
+
+        try
+        {
+            await using var stream = backupFile.OpenReadStream();
+            var restored = await JsonSerializer.DeserializeAsync<BillingData>(
+                stream,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (restored is null)
+            {
+                TempData["SettingsError"] = "The selected backup file is empty or invalid.";
+                return RedirectToAction(nameof(SettingsIntegrations));
+            }
+
+            BackupBillingDataFile("manual-restore");
+            await store.SaveAsync(restored);
+            await auditLogger.LogAsync(HttpContext, "Admin.RestoreDatabase", $"Restored database from '{backupFile.FileName}'.");
+            TempData["SettingsSuccess"] = "Database restored successfully. The previous database was backed up first.";
+        }
+        catch (JsonException ex)
+        {
+            TempData["SettingsError"] = $"Restore failed: invalid JSON file. {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            TempData["SettingsError"] = $"Restore failed: {ex.Message}";
+        }
+
         return RedirectToAction(nameof(SettingsIntegrations));
     }
 
@@ -1026,7 +1173,15 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     public async Task<IActionResult> Settings(SystemSettings settings)
     {
         var data = await store.GetAsync();
-        data.Settings = settings;
+        data.Settings.CompanyName = string.IsNullOrWhiteSpace(settings.CompanyName) ? "Billing System" : settings.CompanyName.Trim();
+        data.Settings.SystemDisplayName = string.IsNullOrWhiteSpace(settings.SystemDisplayName)
+            ? data.Settings.CompanyName
+            : settings.SystemDisplayName.Trim();
+        data.Settings.CompanyLogoUrl = string.IsNullOrWhiteSpace(settings.CompanyLogoUrl) ? data.Settings.CompanyLogoUrl : settings.CompanyLogoUrl.Trim();
+        data.Settings.BrowserLogoUrl = string.IsNullOrWhiteSpace(settings.BrowserLogoUrl) ? data.Settings.BrowserLogoUrl : settings.BrowserLogoUrl.Trim();
+        data.Settings.MonthlyDueDay = settings.MonthlyDueDay;
+        data.Settings.Currency = string.IsNullOrWhiteSpace(settings.Currency) ? "PHP" : settings.Currency.Trim();
+        data.Settings.SmsReminderTemplate = settings.SmsReminderTemplate?.Trim() ?? "";
         await store.SaveAsync(data);
         return RedirectToAction(nameof(Settings));
     }

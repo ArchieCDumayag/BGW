@@ -2,61 +2,116 @@
 @{
     ViewData["Title"] = "Settings & Integrations";
     var users = ViewBag.Users as IReadOnlyList<UserAccount> ?? Array.Empty<UserAccount>();
+    var displayName = string.IsNullOrWhiteSpace(Model.SystemDisplayName) ? Model.CompanyName : Model.SystemDisplayName;
 }
 
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-    <div>
-        <h1 class="page-title h3 mb-1">Settings &amp; Integrations</h1>
-        <p class="text-body-secondary mb-0">Accounts, Semaphore SMS, MikroTik, and GCash payment details.</p>
-    </div>
-    <a class="btn btn-outline-primary" asp-action="Users">
-        <i class="ti ti-users me-1"></i>Accounts
-    </a>
-</div>
-
-<div class="row g-3 mb-3">
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="h3 mb-1">Accounts</div>
-                <p class="text-secondary mb-2">Manage who can access the system and what they can do.</p>
-                <span class="badge text-bg-light border">@users.Count users</span>
-            </div>
+<div class="page-header d-print-none mb-3">
+    <div class="row g-2 align-items-center">
+        <div class="col">
+            <div class="page-pretitle">Admin</div>
+            <h1 class="page-title">Settings &amp; Integrations</h1>
+            <div class="text-secondary mt-1">Branding, accounts, integrations, and database maintenance.</div>
         </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="h3 mb-1">Semaphore SMS</div>
-                <p class="text-secondary mb-0">Configure SMS alerts for billing reminders, outage notices, and payment confirmations.</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="h3 mb-1">MikroTik</div>
-                <p class="text-secondary mb-0">Store router access for API-driven tasks.</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="h3 mb-1">GCASH ACCOUNT</div>
-                <p class="text-secondary mb-0">Set the GCash account details and QR code used for customer payments.</p>
-            </div>
+        <div class="col-auto ms-auto d-print-none">
+            <a class="btn btn-outline-primary" asp-action="Users">
+                <i class="ti ti-users me-1"></i>Accounts
+            </a>
         </div>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
-    <div class="card-header bg-white fw-semibold">Integration settings</div>
+@if (TempData["SettingsError"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+@if (TempData["SettingsSuccess"] is string success)
+{
+    <div class="alert alert-success">@success</div>
+}
+
+<div class="row row-cards mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">System Name</div>
+                <div class="h3 mb-0 text-truncate">@displayName</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Accounts</div>
+                <div class="h3 mb-0">@users.Count users</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">MikroTik Host</div>
+                <div class="h3 mb-0 text-truncate">@(string.IsNullOrWhiteSpace(Model.MikrotikHost) ? "Not set" : Model.MikrotikHost)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">GCash</div>
+                <div class="h3 mb-0 text-truncate">@(string.IsNullOrWhiteSpace(Model.GCashAccountName) ? "Not set" : Model.GCashAccountName)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h2 class="card-title mb-0">System Branding</h2>
+    </div>
     <div class="card-body">
-        <form asp-action="SettingsIntegrations" method="post" class="row g-3">
-            <div class="col-md-6"><label class="form-label">Company name</label><input class="form-control" asp-for="CompanyName" /></div>
-            <div class="col-md-3"><label class="form-label">Monthly due day</label><input class="form-control" asp-for="MonthlyDueDay" type="number" min="1" max="31" /></div>
-            <div class="col-md-3"><label class="form-label">Currency</label><input class="form-control" asp-for="Currency" /></div>
+        <form asp-action="SettingsIntegrations" method="post" enctype="multipart/form-data" class="row g-3">
+            <input type="hidden" asp-for="CompanyLogoUrl" />
+            <input type="hidden" asp-for="BrowserLogoUrl" />
+
+            <div class="col-lg-4">
+                <label class="form-label required">System Display Name</label>
+                <input class="form-control" asp-for="SystemDisplayName" placeholder="3JBGW Billing" required />
+            </div>
+            <div class="col-lg-4">
+                <label class="form-label required">Company Name</label>
+                <input class="form-control" asp-for="CompanyName" required />
+            </div>
+            <div class="col-lg-2">
+                <label class="form-label">Monthly Due Day</label>
+                <input class="form-control" asp-for="MonthlyDueDay" type="number" min="1" max="31" />
+            </div>
+            <div class="col-lg-2">
+                <label class="form-label">Currency</label>
+                <input class="form-control" asp-for="Currency" />
+            </div>
+
+            <div class="col-lg-6">
+                <label class="form-label">Company Logo</label>
+                <input class="form-control" type="file" name="companyLogoFile" accept="image/*,.ico,.svg" />
+                @if (!string.IsNullOrWhiteSpace(Model.CompanyLogoUrl))
+                {
+                    <div class="mt-2 d-flex align-items-center gap-2">
+                        <span class="avatar avatar-md bg-white border" style="background-image: url('@Model.CompanyLogoUrl')"></span>
+                        <span class="text-secondary">@Model.CompanyLogoUrl</span>
+                    </div>
+                }
+            </div>
+            <div class="col-lg-6">
+                <label class="form-label">Browser Page Logo</label>
+                <input class="form-control" type="file" name="browserLogoFile" accept="image/*,.ico,.svg" />
+                @if (!string.IsNullOrWhiteSpace(Model.BrowserLogoUrl))
+                {
+                    <div class="mt-2 d-flex align-items-center gap-2">
+                        <img src="@Model.BrowserLogoUrl" alt="Browser logo" width="32" height="32" class="border rounded" />
+                        <span class="text-secondary">@Model.BrowserLogoUrl</span>
+                    </div>
+                }
+            </div>
 
             <div class="col-12"><hr class="my-2" /></div>
             <div class="col-md-6"><label class="form-label">Semaphore API Key</label><input class="form-control" asp-for="SemaphoreApiKey" /></div>
@@ -74,7 +129,40 @@
             <div class="col-md-4"><label class="form-label">GCash Account Number</label><input class="form-control" asp-for="GCashAccountNumber" /></div>
             <div class="col-md-4"><label class="form-label">GCash QR Code URL</label><input class="form-control" asp-for="GCashQrCodeUrl" /></div>
 
-            <div class="col-12"><button class="btn btn-primary">Save settings</button></div>
+            <div class="col-12">
+                <button class="btn btn-primary">
+                    <i class="ti ti-device-floppy me-1"></i>Save settings
+                </button>
+            </div>
         </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title mb-0">Database Backup &amp; Restore</h2>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-lg-5">
+                <label class="form-label">Backup Database</label>
+                <a class="btn btn-outline-primary w-100" asp-action="BackupDatabase">
+                    <i class="ti ti-download me-1"></i>Download JSON backup
+                </a>
+            </div>
+            <div class="col-lg-7">
+                <form asp-action="RestoreDatabase" method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
+                    <div class="col-md">
+                        <label class="form-label">Restore Database</label>
+                        <input class="form-control" type="file" name="backupFile" accept=".json,application/json" required />
+                    </div>
+                    <div class="col-md-auto">
+                        <button class="btn btn-danger">
+                            <i class="ti ti-upload me-1"></i>Restore backup
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 </div>

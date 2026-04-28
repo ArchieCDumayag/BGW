@@ -243,6 +243,9 @@ public sealed record TechnicianAssignmentOption(int Id, string Name);
 public sealed class SystemSettings
 {
     public string CompanyName { get; set; } = "Billing System";
+    public string SystemDisplayName { get; set; } = "3JBGW Billing";
+    public string CompanyLogoUrl { get; set; } = "";
+    public string BrowserLogoUrl { get; set; } = "";
     public int MonthlyDueDay { get; set; } = 15;
     public string SmsReminderTemplate { get; set; } = "Hi {Name}, your balance is {Balance}.";
     public string Currency { get; set; } = "PHP";

@@ -1,9 +1,31 @@
+@inject BillingSystem.Services.IBillingStore BillingStore
+@{
+    var appSettings = (await BillingStore.GetAsync()).Settings;
+    var systemDisplayName = string.IsNullOrWhiteSpace(appSettings.SystemDisplayName)
+        ? "3JBGW Billing"
+        : appSettings.SystemDisplayName;
+    var companyLogoUrl = appSettings.CompanyLogoUrl ?? "";
+    var browserLogoUrl = appSettings.BrowserLogoUrl ?? "";
+    var systemInitials = new string(systemDisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        .Take(2)
+        .Select(part => char.ToUpperInvariant(part[0]))
+        .ToArray());
+    systemInitials = string.IsNullOrWhiteSpace(systemInitials) ? "3J" : systemInitials;
+}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>@ViewData["Title"] - 3JBGW Billing</title>
+    <title>@ViewData["Title"] - @systemDisplayName</title>
+    @if (!string.IsNullOrWhiteSpace(browserLogoUrl))
+    {
+        <link rel="icon" href="@browserLogoUrl" />
+    }
+    else
+    {
+        <link rel="icon" href="~/favicon.ico" />
+    }
     <script type="importmap"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@@tabler/core@@1.4.0/dist/css/tabler.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
@@ -21,8 +43,15 @@
                 </button>
                 <h1 class="navbar-brand navbar-brand-autodark">
                     <a asp-controller="Admin" asp-action="Dashboard" class="text-decoration-none">
-                        <span class="avatar avatar-sm bg-primary-lt me-2">3J</span>
-                        <span class="navbar-brand-text">3JBGW Billing</span>
+                        @if (!string.IsNullOrWhiteSpace(companyLogoUrl))
+                        {
+                            <span class="avatar avatar-sm bg-white me-2" style="background-image: url('@companyLogoUrl')"></span>
+                        }
+                        else
+                        {
+                            <span class="avatar avatar-sm bg-primary-lt me-2">@systemInitials</span>
+                        }
+                        <span class="navbar-brand-text">@systemDisplayName</span>
                     </a>
                 </h1>
                 <div class="navbar-nav flex-row d-lg-none">
