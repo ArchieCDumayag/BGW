@@ -3,9 +3,14 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews(options =>
+{
+    options.Filters.Add<BillingSystem.Services.AuditLogActionFilter>();
+});
 builder.Services.AddSingleton<BillingSystem.Services.IBillingStore, BillingSystem.Services.JsonBillingStore>();
 builder.Services.AddScoped<BillingSystem.Services.IAuthService, BillingSystem.Services.AuthService>();
+builder.Services.AddScoped<BillingSystem.Services.IAuditLogService, BillingSystem.Services.AuditLogService>();
+builder.Services.AddScoped<BillingSystem.Services.AuditLogActionFilter>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {

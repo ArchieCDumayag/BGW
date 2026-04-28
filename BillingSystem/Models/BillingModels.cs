@@ -21,6 +21,7 @@ public sealed class BillingData
     public List<OltDevice> OltDevices { get; set; } = [];
     public List<CollectorAssignment> CollectorAssignments { get; set; } = [];
     public List<SupportTicket> Tickets { get; set; } = [];
+    public List<UserActivityLog> ActivityLogs { get; set; } = [];
     public SystemSettings Settings { get; set; } = new();
 }
 
@@ -159,6 +160,23 @@ public sealed class UserAccount
     public string DisplayName { get; set; } = "";
     public int? TechnicianId { get; set; }
     public bool IsActive { get; set; } = true;
+}
+
+public sealed class UserActivityLog
+{
+    public int Id { get; set; }
+    public DateTime OccurredAt { get; set; } = DateTime.Now;
+    public int? UserId { get; set; }
+    public string Username { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string Role { get; set; } = "";
+    public string Action { get; set; } = "";
+    public string Controller { get; set; } = "";
+    public string Method { get; set; } = "";
+    public string Path { get; set; } = "";
+    public string IpAddress { get; set; } = "";
+    public int StatusCode { get; set; }
+    public string Details { get; set; } = "";
 }
 
 public sealed class ServicePlan

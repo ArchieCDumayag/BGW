@@ -112,6 +112,7 @@ public sealed class JsonBillingStore(IWebHostEnvironment environment) : IBilling
         data.OltDevices ??= [];
         data.CollectorAssignments ??= [];
         data.Tickets ??= [];
+        data.ActivityLogs ??= [];
         data.Settings ??= new SystemSettings();
 
         foreach (var client in data.Clients)
@@ -181,6 +182,19 @@ public sealed class JsonBillingStore(IWebHostEnvironment environment) : IBilling
             ticket.Status = string.IsNullOrWhiteSpace(ticket.Status) ? "Open" : ticket.Status;
             ticket.AssignedTo ??= "";
             ticket.Remarks ??= "";
+        }
+
+        foreach (var log in data.ActivityLogs)
+        {
+            log.Username ??= "";
+            log.DisplayName ??= "";
+            log.Role ??= "";
+            log.Action ??= "";
+            log.Controller ??= "";
+            log.Method ??= "";
+            log.Path ??= "";
+            log.IpAddress ??= "";
+            log.Details ??= "";
         }
 
         data.Settings.SemaphoreApiKey ??= "";

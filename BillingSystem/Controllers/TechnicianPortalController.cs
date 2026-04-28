@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace BillingSystem.Controllers;
 
-[Authorize(Roles = "Technician,Collector")]
+[Authorize(Roles = "Technician,Collector,User")]
 public sealed class TechnicianPortalController(IBillingStore store) : Controller
 {
     public async Task<IActionResult> Index()
@@ -14,7 +14,8 @@ public sealed class TechnicianPortalController(IBillingStore store) : Controller
         var data = await store.GetAsync();
         var technicianId = GetTechnicianId();
         var technician = data.Technicians.FirstOrDefault(t => t.Id == technicianId);
-        var clients = data.Clients.AsEnumerable();
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? "Technician";
+        var clients = technician is null ? Enumerable.Empty<Client>() : data.Clients.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(technician?.Area) &&
             !technician.Area.Equals("All Areas", StringComparison.OrdinalIgnoreCase))
@@ -22,14 +23,18 @@ public sealed class TechnicianPortalController(IBillingStore store) : Controller
             clients = clients.Where(c => c.Area.Equals(technician.Area, StringComparison.OrdinalIgnoreCase));
         }
 
+        var jobs = data.Jobs.AsEnumerable();
+        jobs = technicianId > 0
+            ? jobs.Where(j => j.TechnicianId == technicianId || j.TechnicianId is null)
+            : jobs.Where(j => j.TechnicianId is null);
+
         var model = new TechnicianPortalViewModel
         {
             DisplayName = User.FindFirstValue("DisplayName") ?? User.Identity?.Name ?? "Technician",
-            Role = User.FindFirstValue(ClaimTypes.Role) ?? "Technician",
+            Role = role,
             TechnicianId = technicianId,
             AssignedClients = clients.OrderBy(c => c.Area).ThenBy(c => c.Zone).ThenBy(c => c.Name).ToList(),
-            Jobs = data.Jobs
-                .Where(j => j.TechnicianId == technicianId || j.TechnicianId is null)
+            Jobs = jobs
                 .OrderBy(j => j.Status == "Done")
                 .ThenBy(j => j.ScheduledOn)
                 .ToList()
@@ -87,6 +92,6 @@ public sealed class TechnicianPortalController(IBillingStore store) : Controller
     {
         return int.TryParse(User.FindFirstValue("TechnicianId"), out var technicianId)
             ? technicianId
-            : 1;
+            : 0;
     }
 }

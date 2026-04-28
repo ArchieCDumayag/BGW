@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Claims;
 using BillingSystem.Models;
 using BillingSystem.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -7,9 +8,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace BillingSystem.Controllers;
 
 [Authorize(Roles = "Admin")]
-public sealed class AdminController(IBillingStore store, IWebHostEnvironment environment) : Controller
+public sealed class AdminController(IBillingStore store, IWebHostEnvironment environment, IAuditLogService auditLogger) : Controller
 {
     private const string ClearClientsConfirmation = "CLEAR ALL";
+    private static readonly string[] AccountRoles = ["Admin", "User", "Technician", "Collector"];
 
     public async Task<IActionResult> Dashboard()
     {
@@ -1022,7 +1024,154 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     public async Task<IActionResult> Users()
     {
         var data = await store.GetAsync();
+        ViewBag.Roles = AccountRoles;
+        ViewBag.Technicians = data.Technicians.Where(t => t.IsActive).OrderBy(t => t.Name).ToList();
         return View(data.UserAccounts.OrderBy(u => u.Username).ToList());
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddUser(UserAccount account)
+    {
+        var data = await store.GetAsync();
+        var username = account.Username?.Trim() ?? "";
+
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            TempData["UserError"] = "Username is required.";
+            return RedirectToAction(nameof(Users));
+        }
+
+        if (data.UserAccounts.Any(user => user.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
+        {
+            TempData["UserError"] = $"Username '{username}' already exists.";
+            return RedirectToAction(nameof(Users));
+        }
+
+        if (string.IsNullOrWhiteSpace(account.Password))
+        {
+            TempData["UserError"] = "Password is required for a new user.";
+            return RedirectToAction(nameof(Users));
+        }
+
+        account.Id = NextId(data.UserAccounts.Select(user => user.Id));
+        account.Username = username;
+        account.Password = account.Password.Trim();
+        account.Role = NormalizeAccountRole(account.Role);
+        account.DisplayName = string.IsNullOrWhiteSpace(account.DisplayName) ? username : account.DisplayName.Trim();
+        account.TechnicianId = NormalizeTechnicianId(account.TechnicianId);
+
+        data.UserAccounts.Add(account);
+        await store.SaveAsync(data);
+        await auditLogger.LogAsync(HttpContext, "Admin.AddUser", $"Created user '{account.Username}' with role '{account.Role}'.");
+
+        TempData["UserSuccess"] = $"User '{account.Username}' was created.";
+        return RedirectToAction(nameof(Users));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> EditUser(UserAccount account)
+    {
+        var data = await store.GetAsync();
+        var existing = data.UserAccounts.FirstOrDefault(user => user.Id == account.Id);
+        if (existing is null)
+        {
+            return NotFound();
+        }
+
+        var username = account.Username?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            TempData["UserError"] = "Username is required.";
+            return RedirectToAction(nameof(Users));
+        }
+
+        if (data.UserAccounts.Any(user => user.Id != account.Id && user.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
+        {
+            TempData["UserError"] = $"Username '{username}' already exists.";
+            return RedirectToAction(nameof(Users));
+        }
+
+        var newRole = NormalizeAccountRole(account.Role);
+        var wouldRemoveLastAdmin =
+            existing.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase) &&
+            (!newRole.Equals("Admin", StringComparison.OrdinalIgnoreCase) || !account.IsActive) &&
+            data.UserAccounts.Count(user => user.Id != existing.Id && user.IsActive && user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase)) == 0;
+
+        if (wouldRemoveLastAdmin)
+        {
+            TempData["UserError"] = "Keep at least one active admin account.";
+            return RedirectToAction(nameof(Users));
+        }
+
+        var previousUsername = existing.Username;
+        existing.Username = username;
+        existing.DisplayName = string.IsNullOrWhiteSpace(account.DisplayName) ? username : account.DisplayName.Trim();
+        existing.Role = newRole;
+        existing.TechnicianId = NormalizeTechnicianId(account.TechnicianId);
+        existing.IsActive = account.IsActive;
+
+        if (!string.IsNullOrWhiteSpace(account.Password))
+        {
+            existing.Password = account.Password.Trim();
+        }
+
+        await store.SaveAsync(data);
+        await auditLogger.LogAsync(HttpContext, "Admin.EditUser", $"Edited user '{previousUsername}' as '{existing.Username}' with role '{existing.Role}'.");
+
+        TempData["UserSuccess"] = $"User '{existing.Username}' was updated.";
+        return RedirectToAction(nameof(Users));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteUser(int id)
+    {
+        var data = await store.GetAsync();
+        var existing = data.UserAccounts.FirstOrDefault(user => user.Id == id);
+        if (existing is null)
+        {
+            return NotFound();
+        }
+
+        var currentUserId = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) ? userId : 0;
+        if (existing.Id == currentUserId)
+        {
+            TempData["UserError"] = "You cannot delete the account you are currently using.";
+            return RedirectToAction(nameof(Users));
+        }
+
+        if (existing.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase) &&
+            data.UserAccounts.Count(user => user.IsActive && user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase)) <= 1)
+        {
+            TempData["UserError"] = "Keep at least one active admin account.";
+            return RedirectToAction(nameof(Users));
+        }
+
+        data.UserAccounts.Remove(existing);
+        await store.SaveAsync(data);
+        await auditLogger.LogAsync(HttpContext, "Admin.DeleteUser", $"Deleted user '{existing.Username}' with role '{existing.Role}'.");
+
+        TempData["UserSuccess"] = $"User '{existing.Username}' was deleted.";
+        return RedirectToAction(nameof(Users));
+    }
+
+    public async Task<IActionResult> ActivityLogs()
+    {
+        var data = await store.GetAsync();
+        return View(data.ActivityLogs.OrderByDescending(log => log.OccurredAt).ThenByDescending(log => log.Id).Take(500).ToList());
+    }
+
+    private static string NormalizeAccountRole(string? role)
+    {
+        var match = AccountRoles.FirstOrDefault(allowedRole => allowedRole.Equals(role?.Trim(), StringComparison.OrdinalIgnoreCase));
+        return match ?? "User";
+    }
+
+    private static int? NormalizeTechnicianId(int? technicianId)
+    {
+        return technicianId is > 0 ? technicianId : null;
     }
 
     private static async Task<PppoeManagementViewModel> BuildPppoeModel(

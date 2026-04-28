@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace BillingSystem.Controllers;
 
-public sealed class AuthController(IAuthService authService) : Controller
+public sealed class AuthController(IAuthService authService, IAuditLogService auditLogger) : Controller
 {
     [AllowAnonymous]
     public IActionResult Login(string? returnUrl = null)
@@ -29,10 +29,26 @@ public sealed class AuthController(IAuthService authService) : Controller
         var account = await authService.ValidateAsync(username, password, role);
         if (account is null)
         {
-            return View(new LoginViewModel(username, "", role, returnUrl, "Invalid username, password, or role."));
+            await auditLogger.LogAsync(
+                HttpContext,
+                "Auth.LoginFailed",
+                $"Failed login for username '{username?.Trim()}' with role '{role?.Trim()}'.",
+                StatusCodes.Status401Unauthorized,
+                username?.Trim(),
+                role: role?.Trim());
+            return View(new LoginViewModel(username ?? "", "", role ?? "Admin", returnUrl, "Invalid username, password, or role."));
         }
 
         await SignInAsync(account);
+        await auditLogger.LogAsync(
+            HttpContext,
+            "Auth.Login",
+            "User logged in.",
+            StatusCodes.Status200OK,
+            account.Username,
+            account.DisplayName,
+            account.Role,
+            account.Id);
 
         if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
         {
@@ -45,6 +61,7 @@ public sealed class AuthController(IAuthService authService) : Controller
     [Authorize]
     public async Task<IActionResult> Logout()
     {
+        await auditLogger.LogAsync(HttpContext, "Auth.Logout", "User logged out.");
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return RedirectToAction(nameof(Login));
     }

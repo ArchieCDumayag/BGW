@@ -1,0 +1,67 @@
+@model IReadOnlyList<UserActivityLog>
+@{
+    ViewData["Title"] = "Activity Logs";
+}
+
+<div class="page-header d-print-none mb-3">
+    <div class="row g-2 align-items-center">
+        <div class="col">
+            <div class="page-pretitle">Admin</div>
+            <h1 class="page-title">Activity Logs</h1>
+            <div class="text-secondary mt-1">Latest user activity recorded by the billing system.</div>
+        </div>
+        <div class="col-auto ms-auto">
+            <span class="badge bg-blue-lt text-blue">@Model.Count latest records</span>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title mb-0">Logs</h2>
+    </div>
+    <div class="table-responsive">
+        <table class="table card-table table-vcenter">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>User</th>
+                    <th>Role</th>
+                    <th>Action</th>
+                    <th>Method</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (!Model.Any())
+            {
+                <tr><td colspan="7" class="text-center text-secondary py-4">No activity recorded yet.</td></tr>
+            }
+            @foreach (var log in Model)
+            {
+                var statusClass = log.StatusCode >= 500
+                    ? "badge bg-danger-lt text-danger"
+                    : log.StatusCode >= 400
+                        ? "badge bg-warning-lt text-warning"
+                        : "badge bg-success-lt text-success";
+                <tr>
+                    <td class="text-secondary">@log.OccurredAt.ToString("MMM dd, yyyy HH:mm:ss")</td>
+                    <td>
+                        <div class="fw-semibold">@(!string.IsNullOrWhiteSpace(log.DisplayName) ? log.DisplayName : log.Username)</div>
+                        <div class="text-secondary small">@log.Username</div>
+                    </td>
+                    <td>@log.Role</td>
+                    <td><code>@log.Action</code></td>
+                    <td>@log.Method</td>
+                    <td><span class="@statusClass">@log.StatusCode</span></td>
+                    <td>
+                        <div>@log.Details</div>
+                        <div class="text-secondary small">@log.Path</div>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

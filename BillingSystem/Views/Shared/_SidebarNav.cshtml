@@ -9,7 +9,7 @@
     var technicianActions = new[] { "Tickets", "Jobs", "JobHistory" };
     var mikrotikActions = new[] { "Pppoe" };
     var customerAppActions = new[] { "SmsReminders" };
-    var adminActions = new[] { "SettingsIntegrations", "Users", "Settings" };
+    var adminActions = new[] { "SettingsIntegrations", "Users", "ActivityLogs", "Settings" };
 
     var customerOpen = customerActions.Contains(action, StringComparer.OrdinalIgnoreCase);
     var billingOpen = billingActions.Contains(action, StringComparer.OrdinalIgnoreCase);
@@ -119,11 +119,13 @@
                 <span class="nav-link-title">Admin</span>
             </a>
             <div class="dropdown-menu @dropdownOpen(adminOpen)">
+                <a class="dropdown-item @active("Users")" asp-controller="Admin" asp-action="Users"><span class="nav-link-icon"><i class="ti ti-users"></i></span> User Accounts</a>
+                <a class="dropdown-item @active("ActivityLogs")" asp-controller="Admin" asp-action="ActivityLogs"><span class="nav-link-icon"><i class="ti ti-activity"></i></span> Activity Logs</a>
                 <a class="dropdown-item @active("SettingsIntegrations")" asp-controller="Admin" asp-action="SettingsIntegrations"><span class="nav-link-icon"><i class="ti ti-adjustments"></i></span> Settings &amp; Integrations</a>
             </div>
         </li>
     }
-    else if (User.IsInRole("Technician") || User.IsInRole("Collector"))
+    else if (User.IsInRole("Technician") || User.IsInRole("Collector") || User.IsInRole("User"))
     {
         <li class="nav-item @controllerActive("TechnicianPortal")">
             <a class="nav-link" asp-controller="TechnicianPortal" asp-action="Index">

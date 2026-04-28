@@ -1,27 +1,261 @@
 @model IReadOnlyList<UserAccount>
 @{
     ViewData["Title"] = "User Accounts";
+    var roles = ViewBag.Roles as IReadOnlyList<string> ?? new[] { "Admin", "User", "Technician", "Collector" };
+    var technicians = ViewBag.Technicians as IReadOnlyList<Technician> ?? Array.Empty<Technician>();
+    var currentUserId = int.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var signedInUserId)
+        ? signedInUserId
+        : 0;
+
+    string roleBadge(string role) => role.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+        ? "badge bg-primary-lt text-primary"
+        : role.Equals("Collector", StringComparison.OrdinalIgnoreCase)
+            ? "badge bg-green-lt text-green"
+            : role.Equals("Technician", StringComparison.OrdinalIgnoreCase)
+                ? "badge bg-azure-lt text-azure"
+                : "badge bg-secondary-lt text-secondary";
 }
 
-<h1 class="page-title h3 mb-3">User Accounts</h1>
+<div class="page-header d-print-none mb-3">
+    <div class="row g-2 align-items-center">
+        <div class="col">
+            <div class="page-pretitle">Admin</div>
+            <h1 class="page-title">User Accounts</h1>
+            <div class="text-secondary mt-1">Create accounts, assign roles, and control system access.</div>
+        </div>
+        <div class="col-auto ms-auto d-print-none">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createUserModal">
+                <i class="ti ti-user-plus me-1"></i>Create user
+            </button>
+        </div>
+    </div>
+</div>
 
-<div class="card border-0 shadow-sm">
-    <div class="card-body p-0">
-        <table class="table table-sm table-hover align-middle mb-0">
-            <thead class="table-light"><tr><th>Username</th><th>Display Name</th><th>Role</th><th>Technician ID</th><th>Active</th></tr></thead>
+@if (TempData["UserError"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+@if (TempData["UserSuccess"] is string success)
+{
+    <div class="alert alert-success">@success</div>
+}
+
+<div class="row row-cards mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Total Users</div>
+                <div class="h2 mb-0">@Model.Count</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Active</div>
+                <div class="h2 mb-0 text-success">@Model.Count(user => user.IsActive)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Admins</div>
+                <div class="h2 mb-0 text-primary">@Model.Count(user => user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Field Users</div>
+                <div class="h2 mb-0 text-azure">@Model.Count(user => user.Role.Equals("Technician", StringComparison.OrdinalIgnoreCase) || user.Role.Equals("Collector", StringComparison.OrdinalIgnoreCase))</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title mb-0">Accounts</h2>
+    </div>
+    <div class="table-responsive">
+        <table class="table card-table table-vcenter">
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Display Name</th>
+                    <th>Role</th>
+                    <th>Technician</th>
+                    <th>Active</th>
+                    <th class="w-1">Actions</th>
+                </tr>
+            </thead>
             <tbody>
+            @if (!Model.Any())
+            {
+                <tr><td colspan="6" class="text-center text-secondary py-4">No users created yet.</td></tr>
+            }
             @foreach (var user in Model)
             {
-                var roleBadge = user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ? "text-bg-primary" : "text-bg-info";
+                var technicianName = user.TechnicianId.HasValue
+                    ? technicians.FirstOrDefault(technician => technician.Id == user.TechnicianId.Value)?.Name ?? $"Technician #{user.TechnicianId}"
+                    : "-";
+                var isCurrentUser = user.Id == currentUserId;
                 <tr>
                     <td><code>@user.Username</code></td>
                     <td>@user.DisplayName</td>
-                    <td><span class="badge @roleBadge">@user.Role</span></td>
-                    <td>@user.TechnicianId</td>
-                    <td><span class="badge rounded-pill @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">@user.IsActive</span></td>
+                    <td><span class="@roleBadge(user.Role)">@user.Role</span></td>
+                    <td>@technicianName</td>
+                    <td><span class="badge rounded-pill @(user.IsActive ? "bg-success-lt text-success" : "bg-secondary-lt text-secondary")">@(user.IsActive ? "Active" : "Disabled")</span></td>
+                    <td>
+                        <div class="btn-list flex-nowrap">
+                            <button class="btn btn-icon btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editUser-@user.Id" title="Edit user">
+                                <i class="ti ti-edit"></i>
+                            </button>
+                            <button class="btn btn-icon btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteUser-@user.Id" title="Delete user" disabled="@isCurrentUser">
+                                <i class="ti ti-trash"></i>
+                            </button>
+                        </div>
+                    </td>
                 </tr>
             }
             </tbody>
         </table>
     </div>
 </div>
+
+<div class="modal modal-blur fade" id="createUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <form asp-action="AddUser" method="post" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create user</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <label class="form-label required">Username</label>
+                        <input class="form-control" name="Username" autocomplete="off" required />
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label required">Password</label>
+                        <input class="form-control" name="Password" type="password" autocomplete="new-password" required />
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label">Display name</label>
+                        <input class="form-control" name="DisplayName" autocomplete="off" />
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label required">Role</label>
+                        <select class="form-select" name="Role" required>
+                            @foreach (var role in roles)
+                            {
+                                <option value="@role">@role</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label">Technician link</label>
+                        <select class="form-select" name="TechnicianId">
+                            <option value="">No technician link</option>
+                            @foreach (var technician in technicians)
+                            {
+                                <option value="@technician.Id">@technician.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-6 d-flex align-items-end">
+                        <label class="form-check mb-2">
+                            <input type="hidden" name="IsActive" value="false" />
+                            <input class="form-check-input" type="checkbox" name="IsActive" value="true" checked />
+                            <span class="form-check-label">Active account</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary"><i class="ti ti-device-floppy me-1"></i>Create user</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@foreach (var user in Model)
+{
+    var isCurrentUser = user.Id == currentUserId;
+    <div class="modal modal-blur fade" id="editUser-@user.Id" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+            <form asp-action="EditUser" method="post" class="modal-content">
+                <input type="hidden" name="Id" value="@user.Id" />
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit user</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <label class="form-label required">Username</label>
+                            <input class="form-control" name="Username" value="@user.Username" autocomplete="off" required />
+                        </div>
+                        <div class="col-lg-6">
+                            <label class="form-label">New password</label>
+                            <input class="form-control" name="Password" type="password" autocomplete="new-password" placeholder="Leave blank to keep current" />
+                        </div>
+                        <div class="col-lg-6">
+                            <label class="form-label">Display name</label>
+                            <input class="form-control" name="DisplayName" value="@user.DisplayName" autocomplete="off" />
+                        </div>
+                        <div class="col-lg-6">
+                            <label class="form-label required">Role</label>
+                            <select class="form-select" name="Role" required>
+                                @foreach (var role in roles)
+                                {
+                                    <option value="@role" selected="@role.Equals(user.Role, StringComparison.OrdinalIgnoreCase)">@role</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-lg-6">
+                            <label class="form-label">Technician link</label>
+                            <select class="form-select" name="TechnicianId">
+                                <option value="" selected="@(!user.TechnicianId.HasValue)">No technician link</option>
+                                @foreach (var technician in technicians)
+                                {
+                                    <option value="@technician.Id" selected="@(user.TechnicianId == technician.Id)">@technician.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-lg-6 d-flex align-items-end">
+                            <label class="form-check mb-2">
+                                <input type="hidden" name="IsActive" value="false" />
+                                <input class="form-check-input" type="checkbox" name="IsActive" value="true" checked="@user.IsActive" />
+                                <span class="form-check-label">Active account</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-primary"><i class="ti ti-device-floppy me-1"></i>Save changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal modal-blur fade" id="deleteUser-@user.Id" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+            <form asp-action="DeleteUser" method="post" class="modal-content">
+                <input type="hidden" name="id" value="@user.Id" />
+                <div class="modal-body">
+                    <div class="modal-title">Delete user?</div>
+                    <div class="text-secondary">This will remove <strong>@user.Username</strong> from system access.</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link link-secondary me-auto" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-danger" disabled="@isCurrentUser">Delete</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
