@@ -60,16 +60,9 @@
             </div>
         </header>
 
-        @{
-            var currentAction = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
-            var pageContainerClass = currentAction.Equals("Pppoe", StringComparison.OrdinalIgnoreCase)
-                ? "container-fluid"
-                : "container-xl";
-        }
-
         <div class="page-wrapper">
             <div class="page-body">
-                <div class="@pageContainerClass">
+                <div class="container-xl">
                     @RenderBody()
                 </div>
             </div>
