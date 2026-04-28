@@ -30,7 +30,7 @@
 }
 
 <div class="pppoe-page">
-    <h1 class="page-title h2 mb-4">PPPoE Management</h1>
+    <h1 class="page-title h2 pppoe-page-title">PPPoE Management</h1>
 
     <div class="pppoe-router-panel mb-3">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
@@ -126,20 +126,20 @@
         </div>
     </div>
 
-    <div class="row g-3 mb-3">
-        <div class="col-md">
+    <div class="pppoe-stat-grid mb-3">
+        <div>
             <div class="pppoe-stat-card"><div class="pppoe-tile-label">TOTAL USERS</div><div class="h3 mb-0">@Model.TotalUsers</div></div>
         </div>
-        <div class="col-md">
+        <div>
             <div class="pppoe-stat-card"><div class="pppoe-tile-label">ACTIVE USERS</div><div class="h3 mb-0 text-success">@Model.ActiveUsers</div></div>
         </div>
-        <div class="col-md">
+        <div>
             <div class="pppoe-stat-card"><div class="pppoe-tile-label">OFFLINE</div><div class="h3 mb-0 text-orange">@Model.OfflineUsers</div></div>
         </div>
-        <div class="col-md">
+        <div>
             <div class="pppoe-stat-card"><div class="pppoe-tile-label">DISABLED</div><div class="h3 mb-0 text-danger">@Model.DisabledUsers</div></div>
         </div>
-        <div class="col-md">
+        <div>
             <div class="pppoe-stat-card"><div class="pppoe-tile-label">TOTAL USAGE</div><div class="h3 mb-0">@Model.TotalUsageGb.ToString("N2") GB</div></div>
         </div>
     </div>

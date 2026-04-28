@@ -98,14 +98,20 @@ html {
 
 .pppoe-page {
   color: #111827;
+  padding: 0 .25rem;
+}
+
+.pppoe-page-title {
+  margin-bottom: 1.6rem;
 }
 
 .pppoe-router-panel {
   border: 1px solid rgba(13, 179, 157, .35);
   border-radius: 18px;
-  padding: 1.125rem;
-  background: linear-gradient(135deg, #dff5fb 0%, #dfe7ff 100%);
-  box-shadow: 0 1rem 2.5rem rgba(15, 23, 42, .08);
+  padding: 1rem 1.125rem;
+  background:
+    linear-gradient(135deg, rgba(222, 248, 245, .96) 0%, rgba(222, 232, 255, .96) 100%);
+  box-shadow: 0 .75rem 1.75rem rgba(15, 23, 42, .07);
 }
 
 .pppoe-status-dot {
@@ -125,29 +131,35 @@ html {
 }
 
 .pppoe-router-select {
-  min-width: 122px;
+  width: 122px;
+  height: 36px;
   font-weight: 700;
+  border-radius: 10px;
+  padding-top: .25rem;
+  padding-bottom: .25rem;
 }
 
 .pppoe-router-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
   gap: .75rem;
 }
 
 .pppoe-router-tile,
 .pppoe-stat-card {
-  min-height: 74px;
+  border: 1px solid rgba(226, 232, 240, .75);
   border-radius: 12px;
-  background: rgba(255, 255, 255, .78);
-  box-shadow: 0 .75rem 1.5rem rgba(15, 23, 42, .06);
+  background: rgba(255, 255, 255, .74);
+  box-shadow: 0 .5rem 1.25rem rgba(15, 23, 42, .05);
 }
 
 .pppoe-router-tile {
+  min-height: 74px;
   display: flex;
   align-items: center;
-  gap: .75rem;
-  padding: .75rem;
+  gap: .625rem;
+  padding: .7rem .75rem;
+  overflow: hidden;
 }
 
 .pppoe-tile-icon {
@@ -163,6 +175,13 @@ html {
   font-size: 1.25rem;
 }
 
+.pppoe-router-tile .fw-bold {
+  color: #030712;
+  font-size: .95rem;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
 .pppoe-tile-label,
 .pppoe-table thead th {
   color: #405472;
@@ -172,8 +191,25 @@ html {
   text-transform: uppercase;
 }
 
+.pppoe-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .75rem;
+}
+
 .pppoe-stat-card {
-  padding: .875rem;
+  min-height: 66px;
+  padding: .72rem .875rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.pppoe-stat-card .h3 {
+  color: #020617;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.15;
 }
 
 .pppoe-accounts-card {
@@ -214,10 +250,15 @@ html {
   .pppoe-router-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .pppoe-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 767.98px) {
-  .pppoe-router-grid {
+  .pppoe-router-grid,
+  .pppoe-stat-grid {
     grid-template-columns: 1fr;
   }
 }
