@@ -165,11 +165,11 @@
                 },
                 labels: @Html.Raw(chartLabels),
                 series: @Html.Raw(chartSeries),
-                colors: [
-                    "color-mix(in srgb, transparent, var(--tblr-green) 100%)",
-                    "color-mix(in srgb, transparent, var(--tblr-blue) 100%)",
-                    "color-mix(in srgb, transparent, var(--tblr-secondary) 100%)"
-                ],
+                colors: ["#2fb344", "#206bc4", "#667382"],
+                stroke: {
+                    colors: ["#ffffff"],
+                    width: 3
+                },
                 legend: {
                     show: true,
                     position: "bottom",
