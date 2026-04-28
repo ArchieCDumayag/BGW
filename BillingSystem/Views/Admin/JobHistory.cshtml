@@ -26,7 +26,7 @@
                 @foreach (var job in Model)
                 {
                     var clientName = clients.TryGetValue(job.ClientId, out var client) ? client.Name : $"Client #{job.ClientId}";
-                    var technicianName = job.TechnicianId.HasValue && technicians.TryGetValue(job.TechnicianId.Value, out var technician) ? technician.Name : "Unassigned";
+                    var technicianName = job.TechnicianId.HasValue && technicians.TryGetValue(job.TechnicianId.Value, out var technician) ? technician.Name : "All Technician";
                     <tr>
                         <td>@job.ScheduledOn</td>
                         <td>@job.CompletedAt</td>

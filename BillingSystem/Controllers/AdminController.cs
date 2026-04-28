@@ -670,6 +670,7 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         var data = await store.GetAsync();
         job.Id = NextId(data.Jobs.Select(j => j.Id));
         job.Type = job.Type.Trim();
+        job.TechnicianId = job.TechnicianId > 0 ? job.TechnicianId : null;
         job.Status = string.IsNullOrWhiteSpace(job.Status) ? "Open" : job.Status;
         job.Remarks = job.Remarks?.Trim() ?? "";
         data.Jobs.Add(job);

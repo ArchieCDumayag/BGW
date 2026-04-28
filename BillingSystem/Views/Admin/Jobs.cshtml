@@ -98,7 +98,7 @@
             {
                 var clientName = clients.FirstOrDefault(c => c.Id == job.ClientId)?.Name
                     ?? (job.ClientId > 0 ? $"Client #{job.ClientId}" : "No client");
-                var technicianName = technicians.FirstOrDefault(t => t.Id == job.TechnicianId)?.Name ?? "Unassigned";
+                var technicianName = technicians.FirstOrDefault(t => t.Id == job.TechnicianId)?.Name ?? "All Technician";
                 var badgeClass = job.Status.Equals("Done", StringComparison.OrdinalIgnoreCase)
                     ? "badge bg-success-lt text-success"
                     : "badge bg-primary-lt text-primary";
@@ -138,7 +138,8 @@
                     <div class="col-lg-6">
                         <label class="form-label">Technician</label>
                         <select class="form-select" name="TechnicianId">
-                            <option value="">Tech list</option>
+                            <option value="" selected disabled>Select Technician</option>
+                            <option value="0">All Technician</option>
                             @foreach (var technician in technicians)
                             {
                                 <option value="@technician.Id">@technician.Name</option>
