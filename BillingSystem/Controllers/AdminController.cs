@@ -656,6 +656,7 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         var data = await store.GetAsync();
         ViewBag.Clients = data.Clients.OrderBy(c => c.Name).ToList();
         ViewBag.Technicians = data.Technicians.OrderBy(t => t.Name).ToList();
+        ViewBag.TechnicianOptions = BuildTechnicianAssignmentOptions(data);
         return View(data.Jobs.OrderBy(j => j.Status == "Done").ThenBy(j => j.ScheduledOn).ToList());
     }
 
@@ -670,6 +671,13 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         }
 
         var data = await store.GetAsync();
+        var technicianOptions = BuildTechnicianAssignmentOptions(data);
+        if (job.TechnicianId.HasValue && job.TechnicianId.Value > 0 && technicianOptions.All(technician => technician.Id != job.TechnicianId.Value))
+        {
+            TempData["JobError"] = "Please select a valid technician.";
+            return RedirectToAction(nameof(Jobs));
+        }
+
         job.Id = NextId(data.Jobs.Select(j => j.Id));
         job.Type = job.Type.Trim();
         job.TechnicianId = job.TechnicianId > 0 ? job.TechnicianId : null;
@@ -913,6 +921,7 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     public async Task<IActionResult> Tickets()
     {
         var data = await store.GetAsync();
+        ViewBag.TechnicianOptions = BuildTechnicianAssignmentOptions(data);
         return View(data);
     }
 
@@ -932,19 +941,25 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
             return RedirectToAction(nameof(Tickets));
         }
 
-        if (string.IsNullOrWhiteSpace(ticket.AssignedTo))
+        var data = await store.GetAsync();
+        var technicianOptions = BuildTechnicianAssignmentOptions(data);
+        var assignedTechnician = ticket.AssignedTechnicianId.HasValue
+            ? technicianOptions.FirstOrDefault(technician => technician.Id == ticket.AssignedTechnicianId.Value)
+            : null;
+
+        if (assignedTechnician is null)
         {
             TempData["TicketError"] = "Please select a technician.";
             return RedirectToAction(nameof(Tickets));
         }
 
-        var data = await store.GetAsync();
         ticket.Id = NextId(data.Tickets.Select(t => t.Id));
         ticket.Subject = string.IsNullOrWhiteSpace(ticket.Subject) ? "Customer ticket" : ticket.Subject.Trim();
         ticket.Type = string.IsNullOrWhiteSpace(ticket.Type) ? "Repair" : ticket.Type.Trim();
         ticket.Priority = string.IsNullOrWhiteSpace(ticket.Priority) ? "Normal" : ticket.Priority.Trim();
         ticket.Status = string.IsNullOrWhiteSpace(ticket.Status) ? "Open" : ticket.Status.Trim();
-        ticket.AssignedTo = ticket.AssignedTo?.Trim() ?? "";
+        ticket.AssignedTechnicianId = assignedTechnician.Id;
+        ticket.AssignedTo = assignedTechnician.Name;
         ticket.Remarks = ticket.Remarks?.Trim() ?? "";
         data.Tickets.Add(ticket);
         await store.SaveAsync(data);
@@ -956,6 +971,7 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         var data = await store.GetAsync();
         ViewBag.Clients = data.Clients.ToDictionary(c => c.Id);
         ViewBag.Technicians = data.Technicians.ToDictionary(t => t.Id);
+        ViewBag.TechnicianOptions = BuildTechnicianAssignmentOptions(data).ToDictionary(t => t.Id, t => t.Name);
         return View(data.Jobs.OrderByDescending(j => j.CompletedAt ?? j.ScheduledOn.ToDateTime(TimeOnly.MinValue)).ToList());
     }
 
@@ -1161,6 +1177,50 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     {
         var data = await store.GetAsync();
         return View(data.ActivityLogs.OrderByDescending(log => log.OccurredAt).ThenByDescending(log => log.Id).Take(500).ToList());
+    }
+
+    private static IReadOnlyList<TechnicianAssignmentOption> BuildTechnicianAssignmentOptions(BillingData data)
+    {
+        var options = new Dictionary<int, string>();
+
+        foreach (var technician in data.Technicians.Where(technician => technician.IsActive))
+        {
+            if (technician.Id > 0)
+            {
+                options[technician.Id] = string.IsNullOrWhiteSpace(technician.Name)
+                    ? $"Technician #{technician.Id}"
+                    : technician.Name.Trim();
+            }
+        }
+
+        foreach (var user in data.UserAccounts.Where(user =>
+            user.IsActive &&
+            user.Role.Equals("Technician", StringComparison.OrdinalIgnoreCase)))
+        {
+            var technicianId = EffectiveTechnicianId(user);
+            if (technicianId > 0)
+            {
+                options[technicianId] = string.IsNullOrWhiteSpace(user.DisplayName)
+                    ? user.Username.Trim()
+                    : user.DisplayName.Trim();
+            }
+        }
+
+        return options
+            .Select(option => new TechnicianAssignmentOption(option.Key, option.Value))
+            .OrderBy(option => option.Name)
+            .ThenBy(option => option.Id)
+            .ToList();
+    }
+
+    private static int EffectiveTechnicianId(UserAccount user)
+    {
+        if (user.TechnicianId is > 0)
+        {
+            return user.TechnicianId.Value;
+        }
+
+        return user.Role.Equals("Technician", StringComparison.OrdinalIgnoreCase) ? user.Id : 0;
     }
 
     private static string NormalizeAccountRole(string? role)

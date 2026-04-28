@@ -2,7 +2,7 @@
 @{
     ViewData["Title"] = "Tickets";
     var clients = Model.Clients.OrderBy(c => c.Name).ToList();
-    var technicians = Model.Technicians.Where(t => t.IsActive).OrderBy(t => t.Name).ToList();
+    var technicianOptions = ViewBag.TechnicianOptions as IReadOnlyList<TechnicianAssignmentOption> ?? Array.Empty<TechnicianAssignmentOption>();
     var subjects = new[]
     {
         "Blinking LOS",
@@ -97,6 +97,9 @@
             @foreach (var ticket in Model.Tickets.OrderByDescending(t => t.CreatedOn).ThenByDescending(t => t.Id))
             {
                 var clientName = Model.Clients.FirstOrDefault(c => c.Id == ticket.ClientId)?.Name ?? $"Client #{ticket.ClientId}";
+                var assignedTo = ticket.AssignedTechnicianId.HasValue
+                    ? technicianOptions.FirstOrDefault(t => t.Id == ticket.AssignedTechnicianId.Value)?.Name ?? ticket.AssignedTo
+                    : ticket.AssignedTo;
                 var priorityClass = ticket.Priority.Equals("Urgent", StringComparison.OrdinalIgnoreCase)
                     ? "badge bg-danger-lt text-danger"
                     : ticket.Priority.Equals("High", StringComparison.OrdinalIgnoreCase)
@@ -109,7 +112,7 @@
                     <td>@ticket.Type</td>
                     <td><span class="@priorityClass">@ticket.Priority</span></td>
                     <td><span class="badge bg-primary-lt text-primary">@ticket.Status</span></td>
-                    <td>@ticket.AssignedTo</td>
+                    <td>@assignedTo</td>
                     <td>@ticket.Remarks</td>
                 </tr>
             }
@@ -158,11 +161,11 @@
                     </div>
                     <div class="col-lg-6">
                         <label class="form-label required">Assigned To</label>
-                        <select class="form-select" name="AssignedTo" required>
+                        <select class="form-select" name="AssignedTechnicianId" required>
                             <option value="" selected>Select technician</option>
-                            @foreach (var technician in technicians)
+                            @foreach (var technician in technicianOptions)
                             {
-                                <option value="@technician.Name">@technician.Name</option>
+                                <option value="@technician.Id">@technician.Name</option>
                             }
                         </select>
                     </div>

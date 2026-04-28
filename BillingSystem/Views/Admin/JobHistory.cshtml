@@ -3,6 +3,7 @@
     ViewData["Title"] = "Technician History";
     var clients = ViewBag.Clients as Dictionary<int, Client> ?? new Dictionary<int, Client>();
     var technicians = ViewBag.Technicians as Dictionary<int, Technician> ?? new Dictionary<int, Technician>();
+    var technicianOptions = ViewBag.TechnicianOptions as Dictionary<int, string> ?? new Dictionary<int, string>();
 }
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -26,7 +27,13 @@
                 @foreach (var job in Model)
                 {
                     var clientName = clients.TryGetValue(job.ClientId, out var client) ? client.Name : $"Client #{job.ClientId}";
-                    var technicianName = job.TechnicianId.HasValue && technicians.TryGetValue(job.TechnicianId.Value, out var technician) ? technician.Name : "All Technician";
+                    var technicianName = job.TechnicianId.HasValue
+                        ? technicianOptions.TryGetValue(job.TechnicianId.Value, out var technicianOption)
+                            ? technicianOption
+                            : technicians.TryGetValue(job.TechnicianId.Value, out var technician)
+                                ? technician.Name
+                                : $"Technician #{job.TechnicianId.Value}"
+                        : "All Technician";
                     <tr>
                         <td>@job.ScheduledOn</td>
                         <td>@job.CompletedAt</td>

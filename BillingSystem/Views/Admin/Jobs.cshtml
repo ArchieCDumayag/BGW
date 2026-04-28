@@ -3,6 +3,7 @@
     ViewData["Title"] = "Jobs";
     var clients = ViewBag.Clients as IReadOnlyList<Client> ?? Array.Empty<Client>();
     var technicians = ViewBag.Technicians as IReadOnlyList<Technician> ?? Array.Empty<Technician>();
+    var technicianOptions = ViewBag.TechnicianOptions as IReadOnlyList<TechnicianAssignmentOption> ?? Array.Empty<TechnicianAssignmentOption>();
     var jobTypes = new[]
     {
         "Install",
@@ -98,7 +99,11 @@
             {
                 var clientName = clients.FirstOrDefault(c => c.Id == job.ClientId)?.Name
                     ?? (job.ClientId > 0 ? $"Client #{job.ClientId}" : "No client");
-                var technicianName = technicians.FirstOrDefault(t => t.Id == job.TechnicianId)?.Name ?? "All Technician";
+                var technicianName = job.TechnicianId.HasValue
+                    ? technicianOptions.FirstOrDefault(t => t.Id == job.TechnicianId.Value)?.Name
+                        ?? technicians.FirstOrDefault(t => t.Id == job.TechnicianId.Value)?.Name
+                        ?? $"Technician #{job.TechnicianId.Value}"
+                    : "All Technician";
                 var badgeClass = job.Status.Equals("Done", StringComparison.OrdinalIgnoreCase)
                     ? "badge bg-success-lt text-success"
                     : "badge bg-primary-lt text-primary";
@@ -136,11 +141,11 @@
                         </select>
                     </div>
                     <div class="col-lg-6">
-                        <label class="form-label">Technician</label>
-                        <select class="form-select" name="TechnicianId">
+                        <label class="form-label required">Assigned To</label>
+                        <select class="form-select" name="TechnicianId" required>
                             <option value="" selected disabled>Select Technician</option>
                             <option value="0">All Technician</option>
-                            @foreach (var technician in technicians)
+                            @foreach (var technician in technicianOptions)
                             {
                                 <option value="@technician.Id">@technician.Name</option>
                             }

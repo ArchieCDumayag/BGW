@@ -233,9 +233,12 @@ public sealed class SupportTicket
     public string Priority { get; set; } = "Normal";
     public string Status { get; set; } = "Open";
     public DateOnly CreatedOn { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+    public int? AssignedTechnicianId { get; set; }
     public string AssignedTo { get; set; } = "";
     public string Remarks { get; set; } = "";
 }
+
+public sealed record TechnicianAssignmentOption(int Id, string Name);
 
 public sealed class SystemSettings
 {

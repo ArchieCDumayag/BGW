@@ -82,9 +82,10 @@ public sealed class AuthController(IAuthService authService, IAuditLogService au
             new("DisplayName", account.DisplayName),
         };
 
-        if (account.TechnicianId is not null)
+        var technicianId = EffectiveTechnicianId(account);
+        if (technicianId is not null)
         {
-            claims.Add(new Claim("TechnicianId", account.TechnicianId.Value.ToString()));
+            claims.Add(new Claim("TechnicianId", technicianId.Value.ToString()));
         }
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -99,5 +100,15 @@ public sealed class AuthController(IAuthService authService, IAuditLogService au
         return role?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true
             ? RedirectToAction("Dashboard", "Admin")
             : RedirectToAction("Index", "TechnicianPortal");
+    }
+
+    private static int? EffectiveTechnicianId(UserAccount account)
+    {
+        if (account.TechnicianId is > 0)
+        {
+            return account.TechnicianId.Value;
+        }
+
+        return account.Role.Equals("Technician", StringComparison.OrdinalIgnoreCase) ? account.Id : null;
     }
 }

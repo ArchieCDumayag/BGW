@@ -23,6 +23,16 @@ public sealed class ApiAuthController(IAuthService authService) : ControllerBase
             account.Username,
             account.DisplayName,
             account.Role,
-            account.TechnicianId));
+            EffectiveTechnicianId(account)));
+    }
+
+    private static int? EffectiveTechnicianId(UserAccount account)
+    {
+        if (account.TechnicianId is > 0)
+        {
+            return account.TechnicianId.Value;
+        }
+
+        return account.Role.Equals("Technician", StringComparison.OrdinalIgnoreCase) ? account.Id : null;
     }
 }
