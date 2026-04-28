@@ -186,6 +186,11 @@ public sealed class JsonBillingStore(IWebHostEnvironment environment) : IBilling
         data.Settings.SemaphoreApiKey ??= "";
         data.Settings.SemaphoreSenderName ??= "";
         data.Settings.MikrotikHost ??= "";
+        if (data.Settings.MikrotikApiPort <= 0)
+        {
+            data.Settings.MikrotikApiPort = 8728;
+        }
+
         data.Settings.MikrotikApiUser ??= "";
         data.Settings.MikrotikApiPassword ??= "";
         data.Settings.GCashAccountName ??= "";

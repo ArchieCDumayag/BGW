@@ -668,24 +668,21 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         return RedirectToAction(nameof(Jobs));
     }
 
-    public async Task<IActionResult> Pppoe()
+    public async Task<IActionResult> Pppoe(string? q, string? filter, int show = 25)
     {
         var data = await store.GetAsync();
-        var users = data.Clients.Select(c =>
-        {
-            var pppoe = data.PppoeUsers.FirstOrDefault(p => p.ClientId == c.Id);
-            return new PppoeUser
-            {
-                Id = pppoe?.Id ?? 0,
-                ClientId = c.Id,
-                Username = string.IsNullOrWhiteSpace(pppoe?.Username) ? c.PppoeUsername : pppoe.Username,
-                Status = pppoe?.Status ?? c.Status,
-                IpAddress = pppoe?.IpAddress ?? "",
-                LastSeenAt = pppoe?.LastSeenAt
-            };
-        }).Where(p => !string.IsNullOrWhiteSpace(p.Username)).OrderBy(p => p.Username).ToList();
+        var model = await BuildPppoeModel(data, q, filter, show, saveSync: false);
+        return View(model);
+    }
 
-        return View(users);
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SyncPppoeFromMikrotik(string? q, string? filter, int show = 25)
+    {
+        var data = await store.GetAsync();
+        await BuildPppoeModel(data, q, filter, show, saveSync: true);
+        await store.SaveAsync(data);
+        return RedirectToAction(nameof(Pppoe), new { q, filter, show });
     }
 
     public async Task<IActionResult> Plans()
@@ -998,6 +995,267 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     {
         var data = await store.GetAsync();
         return View(data.UserAccounts.OrderBy(u => u.Username).ToList());
+    }
+
+    private static async Task<PppoeManagementViewModel> BuildPppoeModel(
+        BillingData data,
+        string? q,
+        string? filter,
+        int show,
+        bool saveSync)
+    {
+        var settings = data.Settings;
+        var query = q?.Trim() ?? "";
+        var selectedFilter = string.IsNullOrWhiteSpace(filter) ? "All" : filter.Trim();
+        var selectedShow = show is 10 or 25 or 50 or 100 ? show : 25;
+
+        if (string.IsNullOrWhiteSpace(settings.MikrotikHost)
+            || string.IsNullOrWhiteSpace(settings.MikrotikApiUser)
+            || string.IsNullOrWhiteSpace(settings.MikrotikApiPassword))
+        {
+            var localRows = ApplyPppoeFilters(BuildLocalPppoeRows(data), query, selectedFilter)
+                .Take(selectedShow)
+                .Select((row, index) => row with { Number = index + 1 })
+                .ToList();
+
+            return new PppoeManagementViewModel
+            {
+                IsConnected = false,
+                ConnectionMessage = "MikroTik settings are incomplete.",
+                RouterHost = settings.MikrotikHost,
+                Query = query,
+                Filter = selectedFilter,
+                Show = selectedShow,
+                Accounts = localRows,
+                TotalUsers = data.PppoeUsers.Count,
+                ActiveUsers = localRows.Count(r => r.Status == "Online"),
+                OfflineUsers = localRows.Count(r => r.Status == "Offline"),
+                DisabledUsers = localRows.Count(r => r.Status == "Disabled"),
+                TotalUsageGb = localRows.Sum(r => r.UsageGb)
+            };
+        }
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            var client = new MikrotikRouterOsClient(
+                settings.MikrotikHost,
+                settings.MikrotikApiPort <= 0 ? 8728 : settings.MikrotikApiPort,
+                settings.MikrotikApiUser,
+                settings.MikrotikApiPassword);
+            var snapshot = await client.GetSnapshotAsync(timeout.Token);
+            var allRows = BuildPppoeRowsFromSnapshot(data, snapshot);
+
+            if (saveSync)
+            {
+                SyncPppoeRowsToStore(data, allRows);
+            }
+
+            var filteredRows = ApplyPppoeFilters(allRows, query, selectedFilter)
+                .Take(selectedShow)
+                .Select((row, index) => row with { Number = index + 1 })
+                .ToList();
+
+            return new PppoeManagementViewModel
+            {
+                IsConnected = true,
+                ConnectionMessage = "Connected to MikroTik",
+                RouterHost = settings.MikrotikHost,
+                RouterIdentity = snapshot.Identity,
+                RouterAddress = snapshot.Address,
+                Version = snapshot.Version,
+                BoardName = snapshot.BoardName,
+                Uptime = snapshot.Uptime,
+                CpuLoad = snapshot.CpuLoad,
+                FreeMemory = snapshot.FreeMemory,
+                TotalMemory = snapshot.TotalMemory,
+                Query = query,
+                Filter = selectedFilter,
+                Show = selectedShow,
+                Accounts = filteredRows,
+                TotalUsers = allRows.Count,
+                ActiveUsers = allRows.Count(r => r.Status == "Online"),
+                OfflineUsers = allRows.Count(r => r.Status == "Offline"),
+                DisabledUsers = allRows.Count(r => r.Status == "Disabled"),
+                TotalUsageGb = allRows.Sum(r => r.UsageGb)
+            };
+        }
+        catch (Exception ex)
+        {
+            var localRows = ApplyPppoeFilters(BuildLocalPppoeRows(data), query, selectedFilter)
+                .Take(selectedShow)
+                .Select((row, index) => row with { Number = index + 1 })
+                .ToList();
+
+            return new PppoeManagementViewModel
+            {
+                IsConnected = false,
+                ConnectionMessage = $"MikroTik connection failed: {ex.Message}",
+                RouterHost = settings.MikrotikHost,
+                Query = query,
+                Filter = selectedFilter,
+                Show = selectedShow,
+                Accounts = localRows,
+                TotalUsers = localRows.Count,
+                ActiveUsers = localRows.Count(r => r.Status == "Online"),
+                OfflineUsers = localRows.Count(r => r.Status == "Offline"),
+                DisabledUsers = localRows.Count(r => r.Status == "Disabled"),
+                TotalUsageGb = localRows.Sum(r => r.UsageGb)
+            };
+        }
+    }
+
+    private static List<PppoeAccountViewModel> BuildPppoeRowsFromSnapshot(BillingData data, MikrotikSnapshot snapshot)
+    {
+        var clientsByPppoe = data.Clients
+            .Where(c => !string.IsNullOrWhiteSpace(c.PppoeUsername))
+            .GroupBy(c => c.PppoeUsername.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var activeByName = snapshot.ActiveSessions
+            .GroupBy(s => s.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        return snapshot.Secrets
+            .OrderBy(s => s.Name)
+            .Select(secret =>
+            {
+                activeByName.TryGetValue(secret.Name, out var active);
+                clientsByPppoe.TryGetValue(secret.Name, out var client);
+
+                var status = secret.Disabled ? "Disabled" : active is not null ? "Online" : "Offline";
+                var usageGb = active is null ? 0 : BytesToGb(active.BytesIn + active.BytesOut);
+
+                return new PppoeAccountViewModel
+                {
+                    ClientId = client?.Id,
+                    CustomerName = client?.Name ?? "",
+                    AccountNumber = client?.AccountNumber ?? "",
+                    Username = secret.Name,
+                    Address = FirstNonEmpty(active?.Address ?? "", secret.RemoteAddress),
+                    CallerId = FirstNonEmpty(active?.CallerId ?? "", secret.CallerId),
+                    Profile = secret.Profile,
+                    LastSeen = active is not null ? $"Online {active.Uptime}" : status,
+                    Status = status,
+                    UsageGb = usageGb,
+                    IsAssigned = client is not null
+                };
+            })
+            .ToList();
+    }
+
+    private static List<PppoeAccountViewModel> BuildLocalPppoeRows(BillingData data)
+    {
+        return data.Clients
+            .Where(c => !string.IsNullOrWhiteSpace(c.PppoeUsername))
+            .OrderBy(c => c.PppoeUsername)
+            .Select(client =>
+            {
+                var pppoe = data.PppoeUsers.FirstOrDefault(p => p.ClientId == client.Id);
+                var status = NormalizePppoeStatus(pppoe?.Status ?? client.Status);
+                return new PppoeAccountViewModel
+                {
+                    ClientId = client.Id,
+                    CustomerName = client.Name,
+                    AccountNumber = client.AccountNumber,
+                    Username = pppoe?.Username ?? client.PppoeUsername,
+                    Address = pppoe?.IpAddress ?? "",
+                    CallerId = "",
+                    Profile = $"Php {client.PlanAmount:N0}",
+                    LastSeen = pppoe?.LastSeenAt?.ToString("MMM dd, yyyy h:mm tt", CultureInfo.InvariantCulture) ?? status,
+                    Status = status,
+                    IsAssigned = true
+                };
+            })
+            .ToList();
+    }
+
+    private static List<PppoeAccountViewModel> ApplyPppoeFilters(
+        IEnumerable<PppoeAccountViewModel> rows,
+        string query,
+        string filter)
+    {
+        var filtered = rows;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            filtered = filtered.Where(row =>
+                row.Username.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.CustomerName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.Profile.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.Status.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.Address.Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        filtered = filter switch
+        {
+            "Online" => filtered.Where(row => row.Status == "Online"),
+            "Offline" => filtered.Where(row => row.Status == "Offline"),
+            "Disabled" => filtered.Where(row => row.Status == "Disabled"),
+            "Assigned" => filtered.Where(row => row.IsAssigned),
+            "Unassigned" => filtered.Where(row => !row.IsAssigned),
+            _ => filtered
+        };
+
+        return filtered.ToList();
+    }
+
+    private static void SyncPppoeRowsToStore(BillingData data, IEnumerable<PppoeAccountViewModel> rows)
+    {
+        foreach (var row in rows.Where(r => r.ClientId.HasValue))
+        {
+            var clientId = row.ClientId!.Value;
+            var existing = data.PppoeUsers.FirstOrDefault(p => p.ClientId == clientId);
+            if (existing is null)
+            {
+                existing = new PppoeUser
+                {
+                    Id = NextId(data.PppoeUsers.Select(p => p.Id)),
+                    ClientId = clientId
+                };
+                data.PppoeUsers.Add(existing);
+            }
+
+            existing.Username = row.Username;
+            existing.Status = row.Status;
+            existing.IpAddress = row.Address;
+            if (row.Status == "Online")
+            {
+                existing.LastSeenAt = DateTime.Now;
+            }
+
+            var client = data.Clients.FirstOrDefault(c => c.Id == clientId);
+            if (client is not null && row.Status == "Disabled")
+            {
+                client.Status = "DC";
+            }
+        }
+    }
+
+    private static string NormalizePppoeStatus(string value)
+    {
+        if (value.Equals("Active", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("Online", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Online";
+        }
+
+        if (value.Equals("DC", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("Disabled", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("disconnect", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Disabled";
+        }
+
+        return "Offline";
+    }
+
+    private static decimal BytesToGb(long bytes)
+    {
+        return Math.Round((decimal)bytes / 1024 / 1024 / 1024, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static string FirstNonEmpty(params string[] values)
+    {
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "";
     }
 
     private static int NextId(IEnumerable<int> ids) => ids.DefaultIfEmpty().Max() + 1;

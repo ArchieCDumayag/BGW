@@ -11,7 +11,7 @@ __pycache__/
 # ASP.NET local/build artifacts
 BillingSystem/bin/
 BillingSystem/obj/
-BillingSystem/.build-check/
+BillingSystem/.build-check*/
 BillingSystem/logs/
 BillingSystem/*.log
 BillingSystem/app-run.*.log

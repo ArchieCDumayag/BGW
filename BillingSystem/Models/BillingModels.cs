@@ -228,6 +228,7 @@ public sealed class SystemSettings
     public string SemaphoreApiKey { get; set; } = "";
     public string SemaphoreSenderName { get; set; } = "";
     public string MikrotikHost { get; set; } = "";
+    public int MikrotikApiPort { get; set; } = 8728;
     public string MikrotikApiUser { get; set; } = "";
     public string MikrotikApiPassword { get; set; } = "";
     public string GCashAccountName { get; set; } = "";
@@ -329,6 +330,46 @@ public sealed class PaymentReceiptViewModel
     public BillingRuleInfo? BillingRule { get; init; }
     public decimal TotalPaid { get; init; }
     public string ReceiptNumber => $"OR-{Payment.Id:000000}";
+}
+
+public sealed class PppoeManagementViewModel
+{
+    public bool IsConnected { get; init; }
+    public string ConnectionMessage { get; init; } = "";
+    public string RouterHost { get; init; } = "";
+    public string RouterIdentity { get; init; } = "";
+    public string RouterAddress { get; init; } = "";
+    public string Version { get; init; } = "";
+    public string BoardName { get; init; } = "";
+    public string Uptime { get; init; } = "";
+    public int CpuLoad { get; init; }
+    public long FreeMemory { get; init; }
+    public long TotalMemory { get; init; }
+    public int TotalUsers { get; init; }
+    public int ActiveUsers { get; init; }
+    public int OfflineUsers { get; init; }
+    public int DisabledUsers { get; init; }
+    public decimal TotalUsageGb { get; init; }
+    public string Query { get; init; } = "";
+    public string Filter { get; init; } = "All";
+    public int Show { get; init; } = 25;
+    public IReadOnlyList<PppoeAccountViewModel> Accounts { get; init; } = [];
+}
+
+public sealed record PppoeAccountViewModel
+{
+    public int Number { get; init; }
+    public int? ClientId { get; init; }
+    public string CustomerName { get; init; } = "";
+    public string AccountNumber { get; init; } = "";
+    public string Username { get; init; } = "";
+    public string Address { get; init; } = "";
+    public string CallerId { get; init; } = "";
+    public string Profile { get; init; } = "";
+    public string LastSeen { get; init; } = "";
+    public string Status { get; init; } = "";
+    public decimal UsageGb { get; init; }
+    public bool IsAssigned { get; init; }
 }
 
 public sealed class BillingRuleInfo

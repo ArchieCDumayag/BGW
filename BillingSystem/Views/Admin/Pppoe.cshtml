@@ -1,36 +1,283 @@
-@model IReadOnlyList<PppoeUser>
+@model PppoeManagementViewModel
 @{
-    ViewData["Title"] = "PPPoE";
+    ViewData["Title"] = "PPPoE Management";
+
+    var filters = new[] { "All", "Online", "Offline", "Disabled", "All Links", "Assigned", "Unassigned" };
+
+    string FilterClass(string filter) => Model.Filter.Equals(filter, StringComparison.OrdinalIgnoreCase)
+        ? "btn btn-primary rounded-pill"
+        : "btn btn-outline-primary rounded-pill";
+
+    string StatusBadge(string status) => status switch
+    {
+        "Online" => "text-bg-success",
+        "Disabled" => "text-bg-danger",
+        "Offline" => "text-bg-warning",
+        _ => "text-bg-secondary"
+    };
+
+    string FormatBytes(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "-";
+        }
+
+        return bytes >= 1024L * 1024 * 1024
+            ? $"{(decimal)bytes / 1024 / 1024 / 1024:N2} GB"
+            : $"{(decimal)bytes / 1024 / 1024:N2} MB";
+    }
 }
 
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-    <div>
-        <h1 class="page-title h3 mb-1">PPPoE Users</h1>
-        <p class="text-body-secondary mb-0">Monitor client PPPoE usernames and connection status.</p>
-    </div>
-    <span class="badge text-bg-light border">@Model.Count users</span>
-</div>
+<div class="pppoe-page">
+    <h1 class="page-title h2 mb-4">PPPoE Management</h1>
 
-<div class="card border-0 shadow-sm">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-sm table-hover align-middle mb-0">
-                <thead class="table-light"><tr><th>Client ID</th><th>Username</th><th>Status</th><th>IP Address</th><th>Last Seen</th></tr></thead>
-                <tbody>
-                @foreach (var user in Model)
+    <div class="pppoe-router-panel mb-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+            <div class="d-flex align-items-center gap-2 fw-bold">
+                <span class="pppoe-status-dot @(Model.IsConnected ? "online" : "offline")"></span>
+                <span>@(Model.IsConnected ? "Connected to MikroTik" : "MikroTik not connected")</span>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="text-secondary fw-bold small">ROUTER</span>
+                <select class="form-select pppoe-router-select">
+                    <option>@(string.IsNullOrWhiteSpace(Model.RouterIdentity) ? Model.RouterHost : Model.RouterIdentity)</option>
+                </select>
+                <a class="btn btn-icon btn-light" asp-action="Pppoe" asp-route-q="@Model.Query" asp-route-filter="@Model.Filter" asp-route-show="@Model.Show" title="Refresh">
+                    <i class="ti ti-refresh"></i>
+                </a>
+                <span class="text-primary fw-semibold">@(Model.IsConnected ? $"Connected for {Model.Uptime}" : Model.ConnectionMessage)</span>
+            </div>
+        </div>
+
+        <div class="pppoe-router-grid">
+            <div>
+                <div class="pppoe-router-tile">
+                    <span class="pppoe-tile-icon"><i class="ti ti-sitemap"></i></span>
+                    <div>
+                        <div class="pppoe-tile-label">IDENTITY</div>
+                        <div class="fw-bold">@(!string.IsNullOrWhiteSpace(Model.RouterIdentity) ? Model.RouterIdentity : Model.RouterHost)</div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div class="pppoe-router-tile">
+                    <span class="pppoe-tile-icon"><i class="ti ti-send"></i></span>
+                    <div>
+                        <div class="pppoe-tile-label">ADDRESS</div>
+                        <div class="fw-bold">@(!string.IsNullOrWhiteSpace(Model.RouterAddress) ? Model.RouterAddress : Model.RouterHost)</div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div class="pppoe-router-tile">
+                    <span class="pppoe-tile-icon"><i class="ti ti-cpu"></i></span>
+                    <div class="w-100">
+                        <div class="pppoe-tile-label">CPU LOAD</div>
+                        <div class="fw-bold">@Model.CpuLoad%</div>
+                        <div class="progress progress-sm mt-1">
+                            <div class="progress-bar bg-success" style="width:@Math.Clamp(Model.CpuLoad, 0, 100)%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div class="pppoe-router-tile">
+                    <span class="pppoe-tile-icon"><i class="ti ti-clock"></i></span>
+                    <div>
+                        <div class="pppoe-tile-label">UPTIME</div>
+                        <div class="fw-bold">@(!string.IsNullOrWhiteSpace(Model.Uptime) ? Model.Uptime : "-")</div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div class="pppoe-router-tile">
+                    <span class="pppoe-tile-icon"><i class="ti ti-server"></i></span>
+                    <div class="w-100">
+                        <div class="pppoe-tile-label">MEMORY</div>
+                        <div class="fw-bold">@FormatBytes(Model.FreeMemory) / @FormatBytes(Model.TotalMemory)</div>
+                        @{
+                            var memoryPercent = Model.TotalMemory <= 0 ? 0 : (int)Math.Round((decimal)Model.FreeMemory / Model.TotalMemory * 100);
+                        }
+                        <div class="progress progress-sm mt-1">
+                            <div class="progress-bar bg-success" style="width:@Math.Clamp(memoryPercent, 0, 100)%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div class="pppoe-router-tile">
+                    <span class="pppoe-tile-icon"><i class="ti ti-router"></i></span>
+                    <div>
+                        <div class="pppoe-tile-label">BOARD</div>
+                        <div class="fw-bold">@(!string.IsNullOrWhiteSpace(Model.BoardName) ? Model.BoardName : "-")</div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div class="pppoe-router-tile">
+                    <span class="pppoe-tile-icon"><i class="ti ti-git-branch"></i></span>
+                    <div>
+                        <div class="pppoe-tile-label">VERSION</div>
+                        <div class="fw-bold">@(!string.IsNullOrWhiteSpace(Model.Version) ? Model.Version : "-")</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md">
+            <div class="pppoe-stat-card"><div class="pppoe-tile-label">TOTAL USERS</div><div class="h3 mb-0">@Model.TotalUsers</div></div>
+        </div>
+        <div class="col-md">
+            <div class="pppoe-stat-card"><div class="pppoe-tile-label">ACTIVE USERS</div><div class="h3 mb-0 text-success">@Model.ActiveUsers</div></div>
+        </div>
+        <div class="col-md">
+            <div class="pppoe-stat-card"><div class="pppoe-tile-label">OFFLINE</div><div class="h3 mb-0 text-orange">@Model.OfflineUsers</div></div>
+        </div>
+        <div class="col-md">
+            <div class="pppoe-stat-card"><div class="pppoe-tile-label">DISABLED</div><div class="h3 mb-0 text-danger">@Model.DisabledUsers</div></div>
+        </div>
+        <div class="col-md">
+            <div class="pppoe-stat-card"><div class="pppoe-tile-label">TOTAL USAGE</div><div class="h3 mb-0">@Model.TotalUsageGb.ToString("N2") GB</div></div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm pppoe-accounts-card">
+        <div class="card-body">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+                <h2 class="h2 mb-0">PPPoE Accounts</h2>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-primary" type="button">
+                        <i class="ti ti-wand me-1"></i>Generate PPPoE
+                    </button>
+                    <form asp-action="SyncPppoeFromMikrotik" method="post">
+                        <input type="hidden" name="q" value="@Model.Query" />
+                        <input type="hidden" name="filter" value="@Model.Filter" />
+                        <input type="hidden" name="show" value="@Model.Show" />
+                        <button class="btn btn-outline-primary">
+                            <i class="ti ti-refresh me-1"></i>Sync from MikroTik
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <form asp-action="Pppoe" method="get" class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <div class="input-icon flex-grow-1 pppoe-search">
+                    <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                    <input class="form-control" name="q" value="@Model.Query" placeholder="Search by username, customer, router, profile, or status" />
+                </div>
+                @foreach (var filter in filters)
                 {
-                    var badgeClass = user.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) ? "text-bg-success" :
-                        user.Status.Equals("DC", StringComparison.OrdinalIgnoreCase) ? "text-bg-danger" : "text-bg-secondary";
-                    <tr>
-                        <td>@user.ClientId</td>
-                        <td><code>@user.Username</code></td>
-                        <td><span class="badge rounded-pill @badgeClass">@user.Status</span></td>
-                        <td>@user.IpAddress</td>
-                        <td>@user.LastSeenAt</td>
-                    </tr>
+                    <a class="@FilterClass(filter)" asp-action="Pppoe" asp-route-q="@Model.Query" asp-route-filter="@filter" asp-route-show="@Model.Show">@filter</a>
                 }
-                </tbody>
-            </table>
+                <div class="d-flex align-items-center gap-2 ms-auto">
+                    <span class="small">Show</span>
+                    <select class="form-select pppoe-show-select" name="show" onchange="this.form.submit()">
+                        @foreach (var option in new[] { 10, 25, 50, 100 })
+                        {
+                            <option value="@option" selected="@(Model.Show == option)">@option</option>
+                        }
+                    </select>
+                    <input type="hidden" name="filter" value="@Model.Filter" />
+                </div>
+            </form>
+
+            <div class="table-responsive pppoe-table-shell">
+                <table class="table table-hover align-middle mb-0 pppoe-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Customer</th>
+                            <th>Username</th>
+                            <th>Address</th>
+                            <th>Caller ID</th>
+                            <th>Profile</th>
+                            <th>Last Seen</th>
+                            <th>Usage (GB)</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @if (!Model.Accounts.Any())
+                    {
+                        <tr>
+                            <td colspan="9" class="text-center text-secondary py-4">@Model.ConnectionMessage</td>
+                        </tr>
+                    }
+                    @foreach (var account in Model.Accounts)
+                    {
+                        <tr>
+                            <td>@account.Number</td>
+                            <td>
+                                @if (account.IsAssigned)
+                                {
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="avatar avatar-sm bg-secondary-lt">@Initials(account.CustomerName)</span>
+                                        <div>
+                                            <div class="fw-semibold">@account.CustomerName</div>
+                                            <div class="small text-secondary">@account.AccountNumber</div>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="text-secondary">Unassigned</span>
+                                }
+                            </td>
+                            <td class="fw-semibold">@account.Username</td>
+                            <td>@account.Address</td>
+                            <td>@account.CallerId</td>
+                            <td>@account.Profile</td>
+                            <td><span class="badge @StatusBadge(account.Status)">@account.LastSeen</span></td>
+                            <td>
+                                <div class="fw-semibold">@account.UsageGb.ToString("N2") GB</div>
+                                <div class="progress progress-sm mt-1">
+                                    <div class="progress-bar bg-primary" style="width:@Math.Clamp((int)account.UsageGb, 0, 100)%"></div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="btn-list flex-nowrap">
+                                    <button class="btn btn-icon btn-sm btn-outline-secondary" title="Traffic chart" type="button"><i class="ti ti-chart-line"></i></button>
+                                    @if (account.ClientId is int clientId)
+                                    {
+                                        <a class="btn btn-icon btn-sm btn-outline-primary" asp-action="ClientHistory" asp-route-id="@clientId" title="Open client"><i class="ti ti-edit"></i></a>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-icon btn-sm btn-outline-secondary" title="Unassigned" type="button"><i class="ti ti-edit"></i></button>
+                                    }
+                                    <button class="btn btn-icon btn-sm btn-outline-danger" title="Delete" type="button"><i class="ti ti-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
+                <div class="text-secondary">Showing 1-@Model.Accounts.Count of @Model.TotalUsers PPPoE entries</div>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-icon btn-outline-secondary disabled" type="button"><i class="ti ti-chevron-left"></i></button>
+                    <span class="fw-semibold">Page 1 of 1</span>
+                    <button class="btn btn-icon btn-outline-secondary disabled" type="button"><i class="ti ti-chevron-right"></i></button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
+
+@functions {
+    private static string Initials(string value)
+    {
+        var parts = value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return "??";
+        }
+
+        return string.Concat(parts.Take(2).Select(part => char.ToUpperInvariant(part[0])));
+    }
+}
