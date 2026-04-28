@@ -19,8 +19,8 @@ html {
 
 .brand-logo-frame {
   display: inline-flex;
-  width: 8rem;
-  height: 2.25rem;
+  width: 6rem;
+  height: 2rem;
   align-items: center;
   justify-content: center;
   overflow: hidden;
