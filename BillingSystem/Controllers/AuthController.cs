@@ -36,7 +36,7 @@ public sealed class AuthController(IAuthService authService, IAuditLogService au
                 StatusCodes.Status401Unauthorized,
                 username?.Trim(),
                 role: role?.Trim());
-            return View(new LoginViewModel(username ?? "", "", role ?? "Admin", returnUrl, "Invalid username, password, or role."));
+            return View(new LoginViewModel(username ?? "", "", role ?? "Admin", returnUrl, "Invalid username or password."));
         }
 
         await SignInAsync(account);

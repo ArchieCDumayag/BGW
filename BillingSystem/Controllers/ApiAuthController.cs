@@ -14,7 +14,7 @@ public sealed class ApiAuthController(IAuthService authService) : ControllerBase
         var account = await authService.ValidateAsync(request.Username, request.Password, request.Role);
         if (account is null)
         {
-            return Unauthorized(new ApiLoginResponse(false, "Invalid username, password, or role.", "", "", "", null));
+            return Unauthorized(new ApiLoginResponse(false, "Invalid username or password.", "", "", "", null));
         }
 
         return Ok(new ApiLoginResponse(

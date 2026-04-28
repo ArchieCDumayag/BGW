@@ -26,12 +26,6 @@ public sealed class AuthService(IBillingStore store) : IAuthService
             return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(role) &&
-            !account.Role.Equals(role, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
         return account;
     }
 
