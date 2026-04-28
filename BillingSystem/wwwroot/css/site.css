@@ -96,50 +96,9 @@ html {
   text-align: center;
 }
 
-.pppoe-page {
-  color: #111827;
-  padding: 0 .25rem;
-  width: 100%;
-  max-width: none;
-}
-
-.pppoe-page-title {
-  margin-bottom: 1.6rem;
-}
-
-.pppoe-router-panel {
-  width: 100%;
-  border: 1px solid rgba(13, 179, 157, .35);
-  border-radius: 18px;
-  padding: 1rem 1.125rem;
-  background:
-    linear-gradient(135deg, rgba(222, 248, 245, .96) 0%, rgba(222, 232, 255, .96) 100%);
-  box-shadow: 0 .75rem 1.75rem rgba(15, 23, 42, .07);
-}
-
-.pppoe-status-dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: inline-flex;
-  border: 4px solid rgba(255, 255, 255, .6);
-}
-
-.pppoe-status-dot.online {
-  background: #0ca678;
-}
-
-.pppoe-status-dot.offline {
-  background: #d63939;
-}
-
 .pppoe-router-select {
-  width: 122px;
-  height: 36px;
+  min-width: 150px;
   font-weight: 700;
-  border-radius: 10px;
-  padding-top: .25rem;
-  padding-bottom: .25rem;
 }
 
 .pppoe-router-grid {
@@ -151,51 +110,13 @@ html {
   padding-bottom: .125rem;
 }
 
-.pppoe-router-tile,
-.pppoe-stat-card {
-  border: 1px solid rgba(226, 232, 240, .75);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, .74);
-  box-shadow: 0 .5rem 1.25rem rgba(15, 23, 42, .05);
+.pppoe-info-card .card-body {
+  min-height: 86px;
 }
 
-.pppoe-router-tile {
-  min-height: 74px;
-  display: flex;
-  align-items: center;
-  gap: .625rem;
-  padding: .7rem .75rem;
-  overflow: hidden;
-  width: 100%;
-}
-
-.pppoe-tile-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  color: #0ea5e9;
-  background: #c9e6fb;
-  font-size: 1.25rem;
-}
-
-.pppoe-router-tile .fw-bold {
-  color: #030712;
-  font-size: .95rem;
+.pppoe-info-card .fw-bold {
   line-height: 1.15;
   overflow-wrap: anywhere;
-}
-
-.pppoe-tile-label,
-.pppoe-table thead th {
-  color: #405472;
-  font-size: .75rem;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-transform: uppercase;
 }
 
 .pppoe-stat-grid {
@@ -207,25 +128,6 @@ html {
   padding-bottom: .125rem;
 }
 
-.pppoe-stat-card {
-  min-height: 66px;
-  padding: .72rem .875rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.pppoe-stat-card .h3 {
-  color: #020617;
-  font-size: 1.05rem;
-  font-weight: 800;
-  line-height: 1.15;
-}
-
-.pppoe-accounts-card {
-  border-radius: 22px;
-}
-
 .pppoe-search {
   min-width: min(100%, 480px);
 }
@@ -233,27 +135,6 @@ html {
 .pppoe-show-select {
   width: 78px;
   font-weight: 700;
-}
-
-.pppoe-table-shell {
-  border: 1px solid var(--tblr-border-color);
-  border-radius: 14px;
-}
-
-.pppoe-table {
-  overflow: hidden;
-}
-
-.pppoe-table thead th {
-  background: #f3f6fa;
-}
-
-.pppoe-table tbody tr {
-  background: #fbfdff;
-}
-
-.pppoe-table tbody tr:hover {
-  background: #f3f8ff;
 }
 
 .receipt-shell {
