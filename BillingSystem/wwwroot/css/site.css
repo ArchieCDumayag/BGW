@@ -99,6 +99,8 @@ html {
 .pppoe-page {
   color: #111827;
   padding: 0 .25rem;
+  width: 100%;
+  max-width: none;
 }
 
 .pppoe-page-title {
@@ -106,6 +108,7 @@ html {
 }
 
 .pppoe-router-panel {
+  width: 100%;
   border: 1px solid rgba(13, 179, 157, .35);
   border-radius: 18px;
   padding: 1rem 1.125rem;
@@ -140,16 +143,10 @@ html {
 }
 
 .pppoe-router-grid {
-  display: flex !important;
-  flex-wrap: nowrap !important;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: .75rem;
-  overflow-x: auto;
-  padding-bottom: .125rem;
-}
-
-.pppoe-router-grid > div {
-  flex: 1 1 0;
-  min-width: 155px;
+  width: 100%;
 }
 
 .pppoe-router-tile,
@@ -167,6 +164,7 @@ html {
   gap: .625rem;
   padding: .7rem .75rem;
   overflow: hidden;
+  width: 100%;
 }
 
 .pppoe-tile-icon {
@@ -202,6 +200,7 @@ html {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: .75rem;
+  width: 100%;
 }
 
 .pppoe-stat-card {
@@ -254,18 +253,19 @@ html {
 }
 
 @media (max-width: 1399.98px) {
+  .pppoe-router-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .pppoe-stat-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 767.98px) {
+  .pppoe-router-grid,
   .pppoe-stat-grid {
     grid-template-columns: 1fr;
-  }
-
-  .pppoe-router-grid > div {
-    min-width: 210px;
   }
 }
 
