@@ -1,0 +1,96 @@
+@model TechnicianPortalViewModel
+@{
+    ViewData["Title"] = "Technician Portal";
+    var clientsById = ViewBag.Clients as Dictionary<int, Client> ?? new Dictionary<int, Client>();
+}
+
+<div class="page-header d-print-none mb-3">
+    <div class="row g-2 align-items-center">
+        <div class="col">
+            <div class="page-pretitle">@Model.Role workspace</div>
+            <h1 class="page-title">Welcome, @Model.DisplayName</h1>
+            <div class="text-secondary mt-1">Assigned clients, installation jobs, repair tickets, remarks, and PPPoE status.</div>
+        </div>
+    </div>
+</div>
+
+<div class="row row-cards mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm"><div class="card-body"><div class="subheader">Assigned clients</div><div class="h1 mb-0">@Model.AssignedClients.Count</div></div></div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm"><div class="card-body"><div class="subheader">Open jobs</div><div class="h1 mb-0">@Model.Jobs.Count(j => j.Status != "Done")</div></div></div>
+    </div>
+</div>
+
+<div class="row row-cards">
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header"><h2 class="card-title">Assigned Clients</h2></div>
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table table-hover">
+                    <thead><tr><th>Name</th><th>Location / Contact</th><th>PPPoE</th><th>Status</th></tr></thead>
+                    <tbody>
+                    @foreach (var client in Model.AssignedClients)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-medium">@client.Name</div>
+                                <div class="text-secondary">@client.BillingType · PHP @client.Bills.ToString("N0") bills</div>
+                            </td>
+                            <td>
+                                <div>@client.Area @client.Zone</div>
+                                <div class="text-secondary text-truncate" style="max-width: 240px">@client.Contact</div>
+                            </td>
+                            <td><code>@client.PppoeUsername</code></td>
+                            <td><span class="badge @(client.Status == "Active" ? "bg-green-lt" : "bg-red-lt")">@client.Status</span></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header"><h2 class="card-title">Installation & Repair Jobs</h2></div>
+            <div class="list-group list-group-flush">
+                @if (!Model.Jobs.Any())
+                {
+                    <div class="list-group-item text-secondary">No assigned jobs yet.</div>
+                }
+                @foreach (var job in Model.Jobs)
+                {
+                    clientsById.TryGetValue(job.ClientId, out var client);
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between gap-2">
+                            <div>
+                                <strong>@job.Type</strong>
+                                <div class="text-secondary">@(client?.Name ?? $"Client #{job.ClientId}")</div>
+                                <div class="text-secondary small">@job.ScheduledOn · @job.Status</div>
+                            </div>
+                            <span class="badge @(job.Status == "Done" ? "bg-green-lt" : "bg-blue-lt")">@job.Status</span>
+                        </div>
+                        <div class="mt-2">@job.Remarks</div>
+                        <form class="mt-3" asp-action="AddRemark" method="post">
+                            <input type="hidden" name="jobId" value="@job.Id" />
+                            <div class="input-group">
+                                <input class="form-control" name="remarks" placeholder="Add job remarks" />
+                                <button class="btn btn-outline-primary">Add</button>
+                            </div>
+                        </form>
+                        @if (job.Status != "Done")
+                        {
+                            <form class="mt-2" asp-action="MarkDone" method="post">
+                                <input type="hidden" name="jobId" value="@job.Id" />
+                                <input type="hidden" name="remarks" value="Marked done from technician portal" />
+                                <button class="btn btn-success w-100">Mark job as done</button>
+                            </form>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>

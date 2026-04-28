@@ -1,0 +1,79 @@
+@model SystemSettings
+@{
+    ViewData["Title"] = "Settings & Integrations";
+    var users = ViewBag.Users as IReadOnlyList<UserAccount> ?? Array.Empty<UserAccount>();
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">Settings &amp; Integrations</h1>
+        <p class="text-body-secondary mb-0">Accounts, Semaphore SMS, MikroTik, and GCash payment details.</p>
+    </div>
+    <a class="btn btn-outline-primary" asp-action="Users">
+        <i class="ti ti-users me-1"></i>Accounts
+    </a>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="h3 mb-1">Accounts</div>
+                <p class="text-secondary mb-2">Manage who can access the system and what they can do.</p>
+                <span class="badge text-bg-light border">@users.Count users</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="h3 mb-1">Semaphore SMS</div>
+                <p class="text-secondary mb-0">Configure SMS alerts for billing reminders, outage notices, and payment confirmations.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="h3 mb-1">MikroTik</div>
+                <p class="text-secondary mb-0">Store router access for API-driven tasks.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="h3 mb-1">GCASH ACCOUNT</div>
+                <p class="text-secondary mb-0">Set the GCash account details and QR code used for customer payments.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-semibold">Integration settings</div>
+    <div class="card-body">
+        <form asp-action="SettingsIntegrations" method="post" class="row g-3">
+            <div class="col-md-6"><label class="form-label">Company name</label><input class="form-control" asp-for="CompanyName" /></div>
+            <div class="col-md-3"><label class="form-label">Monthly due day</label><input class="form-control" asp-for="MonthlyDueDay" type="number" min="1" max="31" /></div>
+            <div class="col-md-3"><label class="form-label">Currency</label><input class="form-control" asp-for="Currency" /></div>
+
+            <div class="col-12"><hr class="my-2" /></div>
+            <div class="col-md-6"><label class="form-label">Semaphore API Key</label><input class="form-control" asp-for="SemaphoreApiKey" /></div>
+            <div class="col-md-6"><label class="form-label">Semaphore Sender Name</label><input class="form-control" asp-for="SemaphoreSenderName" /></div>
+            <div class="col-12"><label class="form-label">SMS reminder template</label><textarea class="form-control" asp-for="SmsReminderTemplate" rows="3"></textarea></div>
+
+            <div class="col-12"><hr class="my-2" /></div>
+            <div class="col-md-4"><label class="form-label">MikroTik Host</label><input class="form-control" asp-for="MikrotikHost" /></div>
+            <div class="col-md-4"><label class="form-label">MikroTik API User</label><input class="form-control" asp-for="MikrotikApiUser" /></div>
+            <div class="col-md-4"><label class="form-label">MikroTik API Password</label><input class="form-control" asp-for="MikrotikApiPassword" type="password" /></div>
+
+            <div class="col-12"><hr class="my-2" /></div>
+            <div class="col-md-4"><label class="form-label">GCash Account Name</label><input class="form-control" asp-for="GCashAccountName" /></div>
+            <div class="col-md-4"><label class="form-label">GCash Account Number</label><input class="form-control" asp-for="GCashAccountNumber" /></div>
+            <div class="col-md-4"><label class="form-label">GCash QR Code URL</label><input class="form-control" asp-for="GCashQrCodeUrl" /></div>
+
+            <div class="col-12"><button class="btn btn-primary">Save settings</button></div>
+        </form>
+    </div>
+</div>

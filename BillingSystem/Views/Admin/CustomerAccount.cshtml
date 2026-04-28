@@ -1,0 +1,230 @@
+@model CustomerAccountViewModel
+@{
+    ViewData["Title"] = "View Customer Account";
+    var client = Model.Client;
+    var billingRule = Model.BillingRule;
+    var statusBadge = client.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" :
+        client.Status.Equals("DC", StringComparison.OrdinalIgnoreCase) ? "bg-red-lt" : "bg-secondary-lt";
+    var hasCoordinates = client.Latitude.HasValue && client.Longitude.HasValue;
+    var coordinateText = hasCoordinates
+        ? $"{client.Latitude!.Value.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)}, {client.Longitude!.Value.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)}"
+        : "-";
+    var mapQuery = hasCoordinates
+        ? coordinateText
+        : string.Join(" ", new[] { client.Address, client.Area, client.Zone }.Where(value => !string.IsNullOrWhiteSpace(value)));
+    var accountMessage = TempData["CustomerAccountMessage"] as string;
+    var accountError = TempData["CustomerAccountError"] as string;
+    var currentMonth = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
+    var currentMonthValue = currentMonth.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+    var planOptions = new[] { 800m, 1000m, 1200m, 1500m };
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">View Customer Account</h1>
+        <p class="text-body-secondary mb-0">@client.Name</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" asp-action="Clients">
+            <i class="ti ti-arrow-left me-1"></i>Clients
+        </a>
+        <a class="btn btn-outline-primary" asp-action="ClientHistory" asp-route-id="@client.Id">
+            <i class="ti ti-history me-1"></i>Client history
+        </a>
+        <a class="btn btn-primary" asp-action="Payments">
+            <i class="ti ti-cash me-1"></i>Add payment
+        </a>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(accountMessage))
+{
+    <div class="alert alert-success" role="alert">@accountMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(accountError))
+{
+    <div class="alert alert-danger" role="alert">@accountError</div>
+}
+
+<div class="row row-cards mb-3">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold">Customer Account</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5 text-secondary fw-normal">Name</dt>
+                    <dd class="col-sm-7 fw-semibold">@client.Name</dd>
+                    <dt class="col-sm-5 text-secondary fw-normal">Contact Number</dt>
+                    <dd class="col-sm-7">@(!string.IsNullOrWhiteSpace(client.Contact) ? client.Contact : "-")</dd>
+                    <dt class="col-sm-5 text-secondary fw-normal">Email</dt>
+                    <dd class="col-sm-7">@(!string.IsNullOrWhiteSpace(client.Email) ? client.Email : "-")</dd>
+                    <dt class="col-sm-5 text-secondary fw-normal">Facebook Account</dt>
+                    <dd class="col-sm-7">@(!string.IsNullOrWhiteSpace(client.FacebookAccount) ? client.FacebookAccount : "-")</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Financial Status</div>
+                <div class="text-secondary small mt-2">Current Balance</div>
+                <div class="h1 mb-0">PHP @Model.CurrentBalance.ToString("N0")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Status</div>
+                <div class="mt-3">
+                    <span class="badge @statusBadge fs-4">@client.Status</span>
+                </div>
+                <div class="small text-secondary mt-2">Active / DC account state</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-semibold">Account Information</div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="text-secondary small">Type</div>
+                <div class="fw-semibold">@client.BillingType</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-secondary small">Plan</div>
+                <div class="fw-semibold">PHP @client.PlanAmount.ToString("N0")</div>
+                <form asp-action="ChangeClientPlan" method="post" class="mt-2">
+                    <input type="hidden" name="id" value="@client.Id" />
+                    <input type="hidden" name="effectiveMonth" value="@currentMonthValue" />
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text">PHP</span>
+                        <select class="form-select" name="planAmount" aria-label="Plan amount" required>
+                            @foreach (var planOption in planOptions)
+                            {
+                                <option value="@planOption.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" selected="@(client.PlanAmount == planOption)">
+                                    @planOption.ToString("N0")
+                                </option>
+                            }
+                        </select>
+                        <button class="btn btn-outline-primary" type="submit">
+                            <i class="ti ti-device-floppy me-1"></i>Update
+                        </button>
+                    </div>
+                    <div class="small text-secondary mt-1">Effective @currentMonth.ToString("MMMM yyyy") onward</div>
+                </form>
+            </div>
+            <div class="col-md-4">
+                <div class="text-secondary small">Due</div>
+                <div class="fw-semibold">@billingRule.ScheduleLabel</div>
+                <div class="small text-secondary">@billingRule.NextDueDate.ToString("MMM dd, yyyy")</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-secondary small">Area</div>
+                <div class="fw-semibold">@client.Area @client.Zone</div>
+                <div class="small text-secondary">@(!string.IsNullOrWhiteSpace(client.Address) ? client.Address : "-")</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-secondary small">Coordinates with Google Map</div>
+                <div class="fw-semibold">@coordinateText</div>
+                @if (!string.IsNullOrWhiteSpace(mapQuery))
+                {
+                    <a class="btn btn-sm btn-outline-primary mt-2" href="https://www.google.com/maps/search/?api=1&query=@Uri.EscapeDataString(mapQuery)" target="_blank" rel="noopener">
+                        <i class="ti ti-map-pin me-1"></i>Open map
+                    </a>
+                }
+            </div>
+            <div class="col-md-4">
+                <div class="text-secondary small">Credit limit for auto disconnect</div>
+                <div class="fw-semibold">@(client.CreditLimit > 0 ? $"PHP {client.CreditLimit:N0}" : "No limit set")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <span class="fw-semibold">Payment History</span>
+            <span class="badge text-bg-light border ms-2">@Model.SelectedYear - @Model.BillingMonths.Count monthly bills</span>
+        </div>
+        <form asp-action="CustomerAccount" method="get" class="d-flex align-items-center gap-2">
+            <input type="hidden" name="id" value="@client.Id" />
+            <label class="small text-secondary mb-0" for="paymentHistoryYear">Year</label>
+            <select class="form-select form-select-sm" id="paymentHistoryYear" name="year" onchange="this.form.submit()">
+                @foreach (var yearOption in Model.AvailableYears)
+                {
+                    <option value="@yearOption" selected="@(yearOption == Model.SelectedYear)">@yearOption</option>
+                }
+            </select>
+        </form>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Month</th>
+                        <th>Due date</th>
+                        <th class="text-end">Balance</th>
+                        <th class="text-end">Advance</th>
+                        <th class="text-end">Current bill</th>
+                        <th class="text-end">Total paid</th>
+                        <th>Date</th>
+                        <th>Method</th>
+                        <th>Reference</th>
+                        <th>Remarks</th>
+                        <th>Collector</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var bill in Model.BillingMonths)
+                {
+                    var billMonthValue = bill.Month.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+                    var billAmountValue = bill.BillAmount.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                    <tr>
+                        <td class="fw-medium">@bill.MonthLabel</td>
+                        <td>@bill.DueDate.ToString("MMM dd, yyyy")</td>
+                        <td class="text-end">PHP @bill.Balance.ToString("N0")</td>
+                        <td class="text-end">@(bill.Advance > 0 ? $"PHP {bill.Advance:N0}" : "-")</td>
+                        <td class="text-end" style="min-width: 190px;">
+                            <form asp-action="UpdateMonthlyBill" method="post" class="d-flex justify-content-end">
+                                <input type="hidden" name="id" value="@client.Id" />
+                                <input type="hidden" name="billingMonth" value="@billMonthValue" />
+                                <input type="hidden" name="returnYear" value="@Model.SelectedYear" />
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text">PHP</span>
+                                    <input class="form-control text-end" name="billAmount" type="number" min="0" step="0.01" value="@billAmountValue" aria-label="Current bill for @bill.MonthLabel" required />
+                                    <button class="btn btn-outline-primary" type="submit" title="Save current bill">
+                                        <i class="ti ti-device-floppy"></i>
+                                    </button>
+                                </div>
+                            </form>
+                            @if (bill.DiscountAmount > 0)
+                            {
+                                <div class="small text-success mt-1">
+                                    Discount PHP @bill.DiscountAmount.ToString("N0")
+                                    @if (!string.IsNullOrWhiteSpace(bill.DiscountNote))
+                                    {
+                                        <span>- @bill.DiscountNote</span>
+                                    }
+                                </div>
+                            }
+                        </td>
+                        <td class="text-end">PHP @bill.AmountPaid.ToString("N0")</td>
+                        <td>@bill.PaymentDates</td>
+                        <td>@bill.Methods</td>
+                        <td>@bill.References</td>
+                        <td>@bill.Remarks</td>
+                        <td>@bill.Collectors</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

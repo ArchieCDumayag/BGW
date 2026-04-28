@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] - 3JBGW Billing</title>
+    <script type="importmap"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@@tabler/core@@1.4.0/dist/css/tabler.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/BillingSystem.styles.css" asp-append-version="true" />
+</head>
+<body>
+@if (User.Identity?.IsAuthenticated == true)
+{
+    <div class="page">
+        <aside class="navbar navbar-vertical navbar-expand-lg d-print-none" data-bs-theme="dark">
+            <div class="container-fluid">
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu" aria-controls="sidebar-menu" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <h1 class="navbar-brand navbar-brand-autodark">
+                    <a asp-controller="Admin" asp-action="Dashboard" class="text-decoration-none">
+                        <span class="avatar avatar-sm bg-primary-lt me-2">3J</span>
+                        <span class="navbar-brand-text">3JBGW Billing</span>
+                    </a>
+                </h1>
+                <div class="navbar-nav flex-row d-lg-none">
+                    <div class="nav-item">
+                        <span class="avatar avatar-sm bg-azure-lt">AD</span>
+                    </div>
+                </div>
+                <div class="collapse navbar-collapse" id="sidebar-menu">
+                    <partial name="_SidebarNav" />
+                </div>
+            </div>
+        </aside>
+
+        <header class="navbar navbar-expand-md d-none d-lg-flex d-print-none">
+            <div class="container-xl">
+                <div class="navbar-nav flex-row order-md-last ms-auto">
+                    <div class="nav-item dropdown">
+                        <a href="#" class="nav-link d-flex lh-1 text-reset p-0" data-bs-toggle="dropdown" aria-label="Open user menu">
+                            <span class="avatar avatar-sm bg-primary-lt">@(User.FindFirst("DisplayName")?.Value.FirstOrDefault().ToString().ToUpperInvariant() ?? "U")</span>
+                            <div class="d-none d-xl-block ps-2">
+                                <div>@(User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name)</div>
+                                <div class="mt-1 small text-secondary">@User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value</div>
+                            </div>
+                        </a>
+                        <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
+                            @if (User.IsInRole("Admin"))
+                            {
+                                <a class="dropdown-item" asp-controller="Admin" asp-action="Users">User accounts</a>
+                                <a class="dropdown-item" asp-controller="Admin" asp-action="SettingsIntegrations">Settings</a>
+                            }
+                            <a class="dropdown-item" asp-controller="Auth" asp-action="Logout">Logout</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="page-wrapper">
+            <div class="page-body">
+                <div class="container-xl">
+                    @RenderBody()
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="page page-center">
+        <div class="container-tight py-4">
+            @RenderBody()
+        </div>
+    </div>
+}
+
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@@tabler/core@@1.4.0/dist/js/tabler.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts/dist/apexcharts.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

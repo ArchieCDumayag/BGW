@@ -1,0 +1,153 @@
+@model PaymentReceiptViewModel
+@{
+    ViewData["Title"] = "Payment Receipt";
+    var payment = Model.Payment;
+    var client = Model.Client;
+    var billingRule = Model.BillingRule;
+    var discountDeadline = billingRule?.DiscountDeadline?.ToString("MMM dd, yyyy") ?? "";
+    var companyName = string.IsNullOrWhiteSpace(Model.Settings.CompanyName) ? "3JBGW Billing" : Model.Settings.CompanyName;
+    var methodBadge = payment.Method.Contains("gcash", StringComparison.OrdinalIgnoreCase) ? "bg-blue-lt" :
+        payment.Method.Contains("cash", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" : "bg-secondary-lt";
+    var planDiscountApplied = client is not null
+        && billingRule?.HasEarlyDiscount == true
+        && billingRule.DiscountDeadline is DateOnly deadline
+        && payment.PaidOn < deadline;
+    var currentPlanCharge = client is null ? 0 :
+        planDiscountApplied ? Math.Max(0, client.PlanAmount - (billingRule?.EarlyDiscountAmount ?? 0)) : client.PlanAmount;
+    var currentCharges = currentPlanCharge;
+    var previousCharges = client is null ? 0 : client.Balance + payment.Amount;
+    var totalBills = previousCharges + currentCharges;
+}
+
+<div class="receipt-shell">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 d-print-none">
+        <div>
+            <h1 class="page-title h3 mb-1">Payment Receipt</h1>
+            <p class="text-body-secondary mb-0">@Model.ReceiptNumber</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            @if (client is not null)
+            {
+                <a class="btn btn-outline-secondary" asp-action="ClientHistory" asp-route-id="@client.Id">
+                    <i class="ti ti-history me-1"></i>Client history
+                </a>
+            }
+            <a class="btn btn-outline-secondary" asp-action="Payments">
+                <i class="ti ti-arrow-left me-1"></i>Payments
+            </a>
+            <button class="btn btn-primary" type="button" onclick="window.print()">
+                <i class="ti ti-printer me-1"></i>Print
+            </button>
+        </div>
+    </div>
+
+    <div class="receipt-paper card border-0 shadow-sm">
+        <div class="card-body p-4 p-md-5">
+            <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="avatar avatar-lg bg-primary-lt text-primary fw-bold">3J</div>
+                    <div>
+                        <div class="h2 mb-1">@companyName</div>
+                        <div class="text-secondary">Official payment receipt</div>
+                    </div>
+                </div>
+                <div class="text-md-end">
+                    <div class="text-secondary text-uppercase small">Receipt no.</div>
+                    <div class="h3 mb-0">@Model.ReceiptNumber</div>
+                    <div class="text-secondary mt-2">@payment.PaidOn.ToString("MMMM dd, yyyy")</div>
+                </div>
+            </div>
+
+            <div class="receipt-divider my-4"></div>
+
+            <div class="row g-4">
+                <div class="col-md-7">
+                    <div class="text-secondary text-uppercase small mb-1">Received from</div>
+                    <div class="h3 mb-1">@(client?.Name ?? $"Unmatched client #{payment.ClientId}")</div>
+                    <div class="text-secondary">
+                        Account: @(client?.AccountNumber ?? "-")<br />
+                        PPPoE: @(client?.PppoeUsername ?? "-")<br />
+                        Contact: @(!string.IsNullOrWhiteSpace(client?.Contact) ? client!.Contact : "-")
+                    </div>
+                </div>
+                <div class="col-md-5">
+                    <div class="receipt-amount-box">
+                        <div class="text-secondary text-uppercase small">Amount paid</div>
+                        <div class="display-6 mb-0">PHP @payment.Amount.ToString("N0")</div>
+                        <span class="badge @methodBadge mt-2">@payment.Method</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="receipt-divider my-4"></div>
+
+            <div class="row g-3 mb-4">
+                <div class="col-sm-6">
+                    <div class="receipt-summary-box">
+                        <div class="text-secondary text-uppercase small">Balance</div>
+                        <div class="h3 mb-0">@(client is null ? "-" : $"PHP {previousCharges:N0}")</div>
+                        <div class="small text-secondary">Previous Charges</div>
+                    </div>
+                </div>
+                <div class="col-sm-6">
+                    <div class="receipt-summary-box">
+                        <div class="text-secondary text-uppercase small">Bills</div>
+                        <div class="h3 mb-0">@(client is null ? "-" : $"PHP {totalBills:N0}")</div>
+                        <div class="small text-secondary">Total bills</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-sm-6 col-lg-3">
+                    <div class="text-secondary text-uppercase small">Reference</div>
+                    <div class="fw-semibold">@(!string.IsNullOrWhiteSpace(payment.ReferenceNumber) ? payment.ReferenceNumber : "-")</div>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <div class="text-secondary text-uppercase small">Collected by</div>
+                    <div class="fw-semibold">@(!string.IsNullOrWhiteSpace(payment.CollectedBy) ? payment.CollectedBy : "-")</div>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <div class="text-secondary text-uppercase small">Billing type</div>
+                    <div class="fw-semibold">@(client?.BillingType ?? "-")</div>
+                </div>
+                <div class="col-sm-6 col-lg-3">
+                    <div class="text-secondary text-uppercase small">Balance after record</div>
+                    <div class="fw-semibold">@(client is null ? "-" : $"PHP {client.Balance:N0}")</div>
+                </div>
+            </div>
+
+            @if (billingRule is not null)
+            {
+                <div class="alert @(billingRule.HasEarlyDiscount ? "alert-success" : "alert-info") mt-4 mb-0">
+                    <div class="fw-semibold">Billing rule: @billingRule.BillingType</div>
+                    <div>@billingRule.ScheduleLabel. Due date: @billingRule.NextDueDate.ToString("MMM dd, yyyy").</div>
+                    @if (billingRule.HasEarlyDiscount)
+                    {
+                        <div>PHP @billingRule.EarlyDiscountAmount.ToString("N0") discount before @discountDeadline. Discounted current bill: PHP @billingRule.DiscountedCurrentBill.ToString("N0").</div>
+                    }
+                </div>
+            }
+
+            <div class="mt-4">
+                <div class="text-secondary text-uppercase small">Remarks</div>
+                <div class="receipt-remarks">@(!string.IsNullOrWhiteSpace(payment.Remarks) ? payment.Remarks : "Payment received and recorded.")</div>
+            </div>
+
+            <div class="row g-4 mt-5">
+                <div class="col-sm-6">
+                    <div class="receipt-signature">
+                        <div class="fw-semibold">@(payment.CollectedBy.Length > 0 ? payment.CollectedBy : "Collector")</div>
+                        <div class="text-secondary small">Received by</div>
+                    </div>
+                </div>
+                <div class="col-sm-6">
+                    <div class="receipt-signature">
+                        <div class="fw-semibold">@(User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "Admin")</div>
+                        <div class="text-secondary small">Prepared by</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

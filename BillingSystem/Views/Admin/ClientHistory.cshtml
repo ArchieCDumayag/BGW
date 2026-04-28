@@ -1,0 +1,303 @@
+@model ClientPaymentHistoryViewModel
+@{
+    ViewData["Title"] = "Client Payment History";
+    var client = Model.Client;
+    var billingRule = Model.BillingRule;
+    var collectionStatus = Model.CollectionStatus;
+    var discountDeadline = billingRule.DiscountDeadline?.ToString("MMM dd, yyyy") ?? "";
+    var lastPayment = Model.Payments.FirstOrDefault();
+    var today = DateOnly.FromDateTime(DateTime.Today);
+    var invoicePayment = collectionStatus.PaidThisMonth;
+    var invoiceAdjustment = client.Advance;
+    var planDiscountApplied = billingRule.HasEarlyDiscount
+        && billingRule.DiscountDeadline is DateOnly deadline
+        && today < deadline;
+    var currentPlanCharge = planDiscountApplied
+        ? Math.Max(0, client.PlanAmount - billingRule.EarlyDiscountAmount)
+        : client.PlanAmount;
+    var balanceFromPreviousCharges = Math.Max(0, client.Balance);
+    var previousCharges = balanceFromPreviousCharges;
+    var totalCredits = invoicePayment + invoiceAdjustment;
+    var remainingPreviousInvoice = Math.Max(0, balanceFromPreviousCharges - totalCredits);
+    var currentCharges = currentPlanCharge;
+    var currentBill = currentPlanCharge + balanceFromPreviousCharges;
+    var totalAmountDue = Math.Max(0, currentBill - totalCredits);
+    var unpaidAmount = invoicePayment <= 0 ? totalAmountDue : 0;
+    var partialBalance = invoicePayment > 0 && totalAmountDue > 0 ? totalAmountDue : 0;
+    var paymentStatus = totalAmountDue <= 0 ? "Paid" : invoicePayment > 0 ? "Partial" : "Unpaid";
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">@client.Name</h1>
+        <p class="text-body-secondary mb-0">Payment history, current bill, balance, advance, contact, and PPPoE status.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2 d-print-none">
+        <a class="btn btn-outline-secondary" asp-action="Clients">
+            <i class="ti ti-arrow-left me-1"></i>Clients
+        </a>
+        <a class="btn btn-primary" asp-action="Payments">
+            <i class="ti ti-cash me-1"></i>Add payment
+        </a>
+    </div>
+</div>
+
+<div class="row row-cards mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Balance</div>
+                <div class="h2 mb-1">PHP @balanceFromPreviousCharges.ToString("N0")</div>
+                <div class="small text-secondary">Balance from Previous Charges</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Current bill</div>
+                <div class="h2 mb-1">PHP @currentBill.ToString("N0")</div>
+                @if (planDiscountApplied)
+                {
+                    <div class="small text-success">Plan PHP @currentPlanCharge.ToString("N0") + previous balance</div>
+                }
+                else
+                {
+                    <div class="small text-secondary">Plan PHP @currentPlanCharge.ToString("N0") + previous balance</div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">TOTAL AMOUNT DUE</div>
+                <div class="h2 mb-1">PHP @totalAmountDue.ToString("N0")</div>
+                <div class="small text-secondary">Less current-month payment PHP @invoicePayment.ToString("N0")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Paid</div>
+                <div class="h2 mb-1">PHP @Model.TotalPaid.ToString("N0")</div>
+                <div class="small text-secondary">Payment history: @Model.Payments.Count records</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert @(billingRule.HasEarlyDiscount ? "alert-success" : "alert-info") d-flex align-items-start gap-2 mb-3" role="alert">
+    <i class="ti @(billingRule.HasEarlyDiscount ? "ti-discount-2" : "ti-calendar-due") fs-2"></i>
+    <div>
+        <div class="fw-semibold">Billing rule: @billingRule.BillingType</div>
+        <div>@billingRule.Summary</div>
+        @if (billingRule.HasEarlyDiscount)
+        {
+            <div>Current plan after discount: <strong>PHP @currentPlanCharge.ToString("N0")</strong></div>
+        }
+    </div>
+</div>
+
+<div class="row row-cards mb-3">
+    <div class="col-sm-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Paid</div>
+                <div class="h2 mb-1">PHP @Model.TotalPaid.ToString("N0")</div>
+                <div class="small text-secondary">Payment history</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Unpaid</div>
+                <div class="h2 mb-1">PHP @unpaidAmount.ToString("N0")</div>
+                <div class="small text-secondary">@(unpaidAmount > 0 ? "No payment this month" : paymentStatus)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Balance (partial)</div>
+                <div class="h2 mb-1">PHP @partialBalance.ToString("N0")</div>
+                <div class="small text-secondary">@(partialBalance > 0 ? "Remaining after current-month payment" : "No partial balance")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-semibold">Invoice Summary</div>
+    <div class="card-body">
+        <div class="row g-3 align-items-stretch">
+            <div class="col-lg-7">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <tbody>
+                            <tr>
+                                <td class="text-secondary">Previous Charges</td>
+                                <td class="text-end fw-semibold">PHP @previousCharges.ToString("N0")</td>
+                            </tr>
+                            <tr>
+                                <td class="text-secondary">Balance from Previous Charges</td>
+                                <td class="text-end fw-semibold">PHP @balanceFromPreviousCharges.ToString("N0")</td>
+                            </tr>
+                            <tr>
+                                <td class="text-secondary">Payment</td>
+                                <td class="text-end text-success">- PHP @invoicePayment.ToString("N0")</td>
+                            </tr>
+                            <tr>
+                                <td class="text-secondary">Adjustment</td>
+                                <td class="text-end text-success">- PHP @invoiceAdjustment.ToString("N0")</td>
+                            </tr>
+                            <tr>
+                                <td class="text-secondary">Remaining Balance from Previous Invoice</td>
+                                <td class="text-end fw-semibold">PHP @remainingPreviousInvoice.ToString("N0")</td>
+                            </tr>
+                            <tr>
+                                <td class="text-secondary">Current Charges</td>
+                                <td class="text-end fw-semibold">PHP @currentCharges.ToString("N0")</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="bg-primary-lt rounded-2 p-3 h-100 d-flex flex-column justify-content-center">
+                    <div class="text-secondary text-uppercase small">TOTAL AMOUNT DUE</div>
+                    <div class="display-6 fw-bold mb-1">PHP @totalAmountDue.ToString("N0")</div>
+                    @if (planDiscountApplied)
+                    {
+                        <div class="small text-success">Current plan includes Xentronet early discount.</div>
+                    }
+                    else
+                    {
+                        <div class="small text-secondary">Current plan plus previous balance, less current-month payment.</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row row-cards mb-3">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold">Client details</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-5 text-secondary fw-normal">Account</dt>
+                    <dd class="col-7">@client.AccountNumber</dd>
+                    <dt class="col-5 text-secondary fw-normal">Billing type</dt>
+                    <dd class="col-7">@client.BillingType</dd>
+                    <dt class="col-5 text-secondary fw-normal">Billing schedule</dt>
+                    <dd class="col-7">@billingRule.ScheduleLabel</dd>
+                    <dt class="col-5 text-secondary fw-normal">Next due</dt>
+                    <dd class="col-7">@billingRule.NextDueDate.ToString("MMM dd, yyyy")</dd>
+                    <dt class="col-5 text-secondary fw-normal">Status</dt>
+                    <dd class="col-7">@client.Status</dd>
+                    <dt class="col-5 text-secondary fw-normal">Plan</dt>
+                    <dd class="col-7">PHP @client.PlanAmount.ToString("N0")</dd>
+                    <dt class="col-5 text-secondary fw-normal">Area</dt>
+                    <dd class="col-7">@client.Area @client.Zone</dd>
+                    <dt class="col-5 text-secondary fw-normal">Contact</dt>
+                    <dd class="col-7">@(!string.IsNullOrWhiteSpace(client.Contact) ? client.Contact : "-")</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold">PPPoE status</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-5 text-secondary fw-normal">Username</dt>
+                    <dd class="col-7"><code>@(!string.IsNullOrWhiteSpace(Model.Pppoe.Username) ? Model.Pppoe.Username : client.PppoeUsername)</code></dd>
+                    <dt class="col-5 text-secondary fw-normal">Status</dt>
+                    <dd class="col-7">@Model.Pppoe.Status</dd>
+                    <dt class="col-5 text-secondary fw-normal">IP address</dt>
+                    <dd class="col-7">@(!string.IsNullOrWhiteSpace(Model.Pppoe.IpAddress) ? Model.Pppoe.IpAddress : "-")</dd>
+                    <dt class="col-5 text-secondary fw-normal">Last seen</dt>
+                    <dd class="col-7">@(Model.Pppoe.LastSeenAt?.ToString("MMM dd, yyyy h:mm tt") ?? "-")</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold">Last payment</div>
+            <div class="card-body">
+                @if (lastPayment is null)
+                {
+                    <div class="empty py-2">
+                        <p class="empty-title">No payment yet</p>
+                        <p class="empty-subtitle text-secondary">This client has no recorded paid bill.</p>
+                    </div>
+                }
+                else
+                {
+                    var methodBadge = lastPayment.Method.Contains("gcash", StringComparison.OrdinalIgnoreCase) ? "bg-blue-lt" :
+                        lastPayment.Method.Contains("cash", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" : "bg-secondary-lt";
+                    <div class="h2 mb-1">PHP @lastPayment.Amount.ToString("N0")</div>
+                    <div class="text-secondary mb-2">@lastPayment.PaidOn.ToString("MMM dd, yyyy")</div>
+                    <span class="badge @methodBadge">@lastPayment.Method</span>
+                    <div class="mt-3">
+                        <a class="btn btn-sm btn-outline-primary" asp-action="PaymentReceipt" asp-route-id="@lastPayment.Id">
+                            <i class="ti ti-receipt me-1"></i>View receipt
+                        </a>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-semibold">Payment history</span>
+        <span class="badge text-bg-light border">@Model.Payments.Count records</span>
+    </div>
+    <div class="card-body p-0">
+        @if (!Model.Payments.Any())
+        {
+            <div class="empty">
+                <p class="empty-title">No payment history</p>
+                <p class="empty-subtitle text-secondary">Record a cash or GCash payment to create a receipt.</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Collector</th><th>Remarks</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var payment in Model.Payments)
+                    {
+                        var methodBadge = payment.Method.Contains("gcash", StringComparison.OrdinalIgnoreCase) ? "bg-blue-lt" :
+                            payment.Method.Contains("cash", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" : "bg-secondary-lt";
+                        <tr>
+                            <td>@payment.PaidOn.ToString("MMM dd, yyyy")</td>
+                            <td class="fw-semibold">PHP @payment.Amount.ToString("N0")</td>
+                            <td><span class="badge @methodBadge">@payment.Method</span></td>
+                            <td>@payment.ReferenceNumber</td>
+                            <td>@payment.CollectedBy</td>
+                            <td>@payment.Remarks</td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary" asp-action="PaymentReceipt" asp-route-id="@payment.Id">
+                                    <i class="ti ti-receipt me-1"></i>Receipt
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

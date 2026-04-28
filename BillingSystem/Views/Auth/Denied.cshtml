@@ -1,0 +1,12 @@
+@{
+    ViewData["Title"] = "Access denied";
+}
+
+<div class="empty">
+    <div class="empty-icon"><i class="ti ti-lock"></i></div>
+    <p class="empty-title">Access denied</p>
+    <p class="empty-subtitle text-secondary">Your account cannot open that page.</p>
+    <div class="empty-action">
+        <a class="btn btn-primary" asp-controller="Auth" asp-action="Login">Back to login</a>
+    </div>
+</div>

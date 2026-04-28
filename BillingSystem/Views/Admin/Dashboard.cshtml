@@ -1,0 +1,191 @@
+@model DashboardViewModel
+@{
+    ViewData["Title"] = "Dashboard";
+    var metrics = new[]
+    {
+        new { Label = "Total Billed", Value = $"PHP {Model.TotalBilled:N0}", Icon = "ti-file-invoice", Color = "primary" },
+        new { Label = "Total Collected", Value = $"PHP {Model.TotalCollected:N0}", Icon = "ti-wallet", Color = "green" },
+        new { Label = "Collection Rate", Value = $"{Model.CollectionRate:N1}%", Icon = "ti-percentage", Color = "azure" },
+        new { Label = "Paying Subscribers", Value = Model.PayingSubscribers.ToString("N0"), Icon = "ti-users", Color = "yellow" },
+        new { Label = "Outstanding Balance", Value = $"PHP {Model.OutstandingBalance:N0}", Icon = "ti-alert-circle", Color = "red" }
+    };
+    var chartLabels = System.Text.Json.JsonSerializer.Serialize(Model.MethodSummaries.Select(m => m.Method));
+    var chartSeries = System.Text.Json.JsonSerializer.Serialize(Model.MethodSummaries.Select(m => m.Amount));
+}
+
+<div class="page-header d-print-none mb-3">
+    <div class="row g-2 align-items-center">
+        <div class="col">
+            <div class="page-pretitle">Billing collection summary</div>
+            <h1 class="page-title">Dashboard</h1>
+            <div class="text-secondary mt-1">@Model.CurrentMonthLabel</div>
+        </div>
+        <div class="col-auto ms-auto">
+            <span class="badge bg-primary-lt">Imported clients: @Model.TotalClients</span>
+        </div>
+    </div>
+</div>
+
+<div class="row row-deck row-cards mb-3">
+    @foreach (var metric in metrics)
+    {
+        <div class="col-sm-6 col-lg">
+            <div class="card card-sm">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <span class="avatar bg-@metric.Color-lt">
+                                <i class="ti @metric.Icon"></i>
+                            </span>
+                        </div>
+                        <div class="col">
+                            <div class="font-weight-medium">@metric.Value</div>
+                            <div class="text-secondary">@metric.Label</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<div class="row row-deck row-cards mb-3">
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Collection Graph</h2>
+                <div class="card-actions text-secondary">Cash vs GCash paid bills</div>
+            </div>
+            <div class="card-body">
+                @if (Model.TotalCollected == 0)
+                {
+                    <div class="empty">
+                        <div class="empty-icon"><i class="ti ti-chart-donut"></i></div>
+                        <p class="empty-title">No paid bills recorded</p>
+                        <p class="empty-subtitle text-secondary">Record payments to populate the collection graph.</p>
+                    </div>
+                }
+                else
+                {
+                    <div id="collection-chart" class="chart-sm"></div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Paid Bill Method</h2>
+            </div>
+            <div class="list-group list-group-flush">
+                @foreach (var method in Model.MethodSummaries)
+                {
+                    var color = method.Method == "Cash" ? "green" : method.Method == "GCash" ? "blue" : "secondary";
+                    <div class="list-group-item">
+                        <div class="row align-items-center">
+                            <div class="col-auto">
+                                <span class="status-dot status-dot-animated bg-@color d-block"></span>
+                            </div>
+                            <div class="col text-truncate">
+                                <strong>@method.Method</strong>
+                                <div class="text-secondary text-truncate">@method.Count paid bills</div>
+                            </div>
+                            <div class="col-auto">
+                                <span class="badge bg-@color-lt">PHP @method.Amount.ToString("N0")</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                <div class="list-group-item">
+                    <div class="row align-items-center">
+                        <div class="col text-truncate">
+                            <strong>Total collected</strong>
+                            <div class="text-secondary">All payment methods</div>
+                        </div>
+                        <div class="col-auto fw-bold">PHP @Model.TotalCollected.ToString("N0")</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Recent Paid Bills</h2>
+        <div class="card-actions">
+            <a class="btn btn-primary btn-sm" asp-action="Payments">
+                <i class="ti ti-cash me-1"></i>
+                View payments
+            </a>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-vcenter card-table table-hover">
+            <thead>
+                <tr><th>Date</th><th>Client</th><th>Method</th><th>Reference</th><th class="text-end">Amount</th></tr>
+            </thead>
+            <tbody>
+            @if (!Model.RecentPayments.Any())
+            {
+                <tr><td colspan="5" class="text-center text-secondary py-4">No paid bills for @Model.CurrentMonthLabel.</td></tr>
+            }
+            @foreach (var payment in Model.RecentPayments)
+            {
+                var badgeClass = payment.Method == "Cash" ? "bg-green-lt" : payment.Method == "GCash" ? "bg-blue-lt" : "bg-secondary-lt";
+                <tr>
+                    <td class="text-secondary">@payment.PaidOn</td>
+                    <td class="fw-medium">@payment.ClientName</td>
+                    <td><span class="badge @badgeClass">@payment.Method</span></td>
+                    <td>@payment.ReferenceNumber</td>
+                    <td class="text-end fw-medium">PHP @payment.Amount.ToString("N0")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const element = document.getElementById("collection-chart");
+            if (!element || !window.ApexCharts) {
+                return;
+            }
+
+            new ApexCharts(element, {
+                chart: {
+                    type: "donut",
+                    fontFamily: "inherit",
+                    height: 260,
+                    sparkline: { enabled: true },
+                    animations: { enabled: false }
+                },
+                labels: @Html.Raw(chartLabels),
+                series: @Html.Raw(chartSeries),
+                colors: [
+                    "color-mix(in srgb, transparent, var(--tblr-green) 100%)",
+                    "color-mix(in srgb, transparent, var(--tblr-blue) 100%)",
+                    "color-mix(in srgb, transparent, var(--tblr-secondary) 100%)"
+                ],
+                legend: {
+                    show: true,
+                    position: "bottom",
+                    offsetY: 12,
+                    markers: { width: 10, height: 10, radius: 100 }
+                },
+                dataLabels: { enabled: false },
+                tooltip: {
+                    fillSeriesColor: false,
+                    y: {
+                        formatter: function (value) {
+                            return "PHP " + Number(value).toLocaleString();
+                        }
+                    }
+                }
+            }).render();
+        });
+    </script>
+}

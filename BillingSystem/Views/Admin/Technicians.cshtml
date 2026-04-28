@@ -1,0 +1,37 @@
+@model IReadOnlyList<Technician>
+@{
+    ViewData["Title"] = "Technicians";
+}
+
+<h1 class="page-title h3 mb-3">Technicians</h1>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-semibold">Add technician</div>
+    <div class="card-body">
+        <form asp-action="AddTechnician" method="post" class="row g-3 align-items-end">
+            <div class="col-md-3"><label class="form-label">Name</label><input class="form-control" name="Name" required /></div>
+            <div class="col-md-3"><label class="form-label">Phone</label><input class="form-control" name="Phone" /></div>
+            <div class="col-md-3"><label class="form-label">Area</label><input class="form-control" name="Area" placeholder="Area or All Areas" /></div>
+            <div class="col-md-2 d-grid"><button class="btn btn-primary">Add technician</button></div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th>Name</th><th>Phone</th><th>Area</th><th>Active</th></tr></thead>
+            <tbody>
+            @foreach (var technician in Model)
+            {
+                <tr>
+                    <td class="fw-medium">@technician.Name</td>
+                    <td>@technician.Phone</td>
+                    <td>@technician.Area</td>
+                    <td><span class="badge rounded-pill @(technician.IsActive ? "text-bg-success" : "text-bg-secondary")">@technician.IsActive</span></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

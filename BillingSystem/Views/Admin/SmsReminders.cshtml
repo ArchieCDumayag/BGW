@@ -1,0 +1,33 @@
+@model IReadOnlyList<Client>
+@{
+    ViewData["Title"] = "SMS Reminders";
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">SMS Reminders</h1>
+        <p class="text-body-secondary mb-0">Prepared reminder text for clients with balances.</p>
+    </div>
+    <span class="badge text-bg-light border">@Model.Count due</span>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Name</th><th>Contact</th><th>Balance</th><th>Message</th></tr></thead>
+                <tbody>
+                @foreach (var client in Model)
+                {
+                    <tr>
+                        <td class="fw-medium">@client.Name</td>
+                        <td>@client.Contact</td>
+                        <td>PHP @client.Balance.ToString("N0")</td>
+                        <td>Hi @client.Name, your internet bill balance is PHP @client.Balance.ToString("N0"). Please settle before due date.</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

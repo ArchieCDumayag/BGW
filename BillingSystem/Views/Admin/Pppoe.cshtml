@@ -1,0 +1,36 @@
+@model IReadOnlyList<PppoeUser>
+@{
+    ViewData["Title"] = "PPPoE";
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">PPPoE Users</h1>
+        <p class="text-body-secondary mb-0">Monitor client PPPoE usernames and connection status.</p>
+    </div>
+    <span class="badge text-bg-light border">@Model.Count users</span>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Client ID</th><th>Username</th><th>Status</th><th>IP Address</th><th>Last Seen</th></tr></thead>
+                <tbody>
+                @foreach (var user in Model)
+                {
+                    var badgeClass = user.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) ? "text-bg-success" :
+                        user.Status.Equals("DC", StringComparison.OrdinalIgnoreCase) ? "text-bg-danger" : "text-bg-secondary";
+                    <tr>
+                        <td>@user.ClientId</td>
+                        <td><code>@user.Username</code></td>
+                        <td><span class="badge rounded-pill @badgeClass">@user.Status</span></td>
+                        <td>@user.IpAddress</td>
+                        <td>@user.LastSeenAt</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

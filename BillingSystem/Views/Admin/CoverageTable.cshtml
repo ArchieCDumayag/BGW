@@ -1,0 +1,97 @@
+@model IReadOnlyList<CoverageArea>
+@{
+    ViewData["Title"] = "Coverage Table";
+    var clients = ViewBag.Clients as IReadOnlyList<Client> ?? Array.Empty<Client>();
+    var knownAreas = ViewBag.KnownAreas as IReadOnlyList<string> ?? Array.Empty<string>();
+    var rows = Model.Select(a => (Id: a.Id, Name: a.AreaName, Saved: true))
+        .Concat(knownAreas
+            .Where(area => !Model.Any(saved => saved.AreaName.Equals(area, StringComparison.OrdinalIgnoreCase)))
+            .Select(area => (Id: 0, Name: area, Saved: false)))
+        .Where(row => !string.IsNullOrWhiteSpace(row.Name))
+        .OrderBy(row => row.Name)
+        .ToList();
+    int CountClients(string areaName) => clients.Count(c => (c.Area ?? "").Equals(areaName, StringComparison.OrdinalIgnoreCase));
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">Coverage Table</h1>
+        <p class="text-body-secondary mb-0">Area totals based on client area assignment.</p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#addCoverageForm">
+        <i class="ti ti-plus me-1"></i>Add Coverage
+    </button>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-secondary">Total Areas</div>
+                <div class="h1 mb-0">@rows.Count</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-secondary">Total Clients</div>
+                <div class="h1 mb-0">@clients.Count</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="collapse mb-3" id="addCoverageForm">
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <form asp-action="SaveCoverage" method="post" class="row g-3">
+                <div class="col-md-9">
+                    <label class="form-label">Area Name</label>
+                    <input class="form-control" name="AreaName" placeholder="Example: Bungahan Zone 3" required />
+                </div>
+                <div class="col-md-3 d-grid">
+                    <button class="btn btn-primary mt-md-4">Save coverage</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Area Name</th><th>Total Clients</th><th class="text-end">Actions</th></tr></thead>
+                <tbody>
+                @if (!rows.Any())
+                {
+                    <tr><td colspan="3" class="text-center text-secondary py-4">No coverage areas yet.</td></tr>
+                }
+                @foreach (var row in rows)
+                {
+                    <tr>
+                        <td>
+                            <form asp-action="SaveCoverage" method="post" class="d-flex gap-2">
+                                <input type="hidden" name="Id" value="@row.Id" />
+                                <input class="form-control form-control-sm" name="AreaName" value="@row.Name" />
+                                <button class="btn btn-sm btn-outline-primary">@(row.Saved ? "Edit" : "Add")</button>
+                            </form>
+                        </td>
+                        <td>@CountClients(row.Name)</td>
+                        <td class="text-end">
+                            @if (row.Saved)
+                            {
+                                <form asp-action="DeleteCoverage" method="post" class="d-inline">
+                                    <input type="hidden" name="id" value="@row.Id" />
+                                    <button class="btn btn-sm btn-outline-danger">Delete</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

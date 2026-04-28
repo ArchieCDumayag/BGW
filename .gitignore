@@ -1,0 +1,42 @@
+# Build output
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.tmp
+__pycache__/
+*.py[cod]
+
+# ASP.NET local/build artifacts
+BillingSystem/bin/
+BillingSystem/obj/
+BillingSystem/.build-check/
+BillingSystem/logs/
+BillingSystem/*.log
+BillingSystem/app-run.*.log
+
+# Local billing/customer data and imports
+BillingSystem/Data/
+*.xlsx
+*.xls
+*.csv
+*.tsv
+
+# Android/Gradle build artifacts
+.gradle/
+AndroidTechnicianApp/.gradle/
+AndroidTechnicianApp/**/build/
+AndroidTechnicianApp/local.properties
+
+# Editor and OS noise
+.vs/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets and local environment overrides
+*.env
+*.env.*
+appsettings.Local.json
+appsettings.Production.json

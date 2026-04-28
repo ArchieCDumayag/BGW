@@ -1,0 +1,19 @@
+@model SystemSettings
+@{
+    ViewData["Title"] = "System Settings";
+}
+
+<h1 class="page-title h3 mb-3">System Settings</h1>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-semibold">General settings</div>
+    <div class="card-body">
+        <form asp-action="Settings" method="post" class="row g-3">
+            <div class="col-md-6"><label class="form-label">Company name</label><input class="form-control" asp-for="CompanyName" /></div>
+            <div class="col-md-3"><label class="form-label">Monthly due day</label><input class="form-control" asp-for="MonthlyDueDay" type="number" min="1" max="31" /></div>
+            <div class="col-md-3"><label class="form-label">Currency</label><input class="form-control" asp-for="Currency" /></div>
+            <div class="col-12"><label class="form-label">SMS reminder template</label><textarea class="form-control" asp-for="SmsReminderTemplate" rows="4"></textarea></div>
+            <div class="col-12"><button class="btn btn-primary">Save settings</button></div>
+        </form>
+    </div>
+</div>

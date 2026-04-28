@@ -1,0 +1,16 @@
+@model IReadOnlyList<Payment>
+@{
+    ViewData["Title"] = "Payment History";
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">Payment History</h1>
+        <p class="text-body-secondary mb-0">All recorded client payments and receipts.</p>
+    </div>
+    <a class="btn btn-outline-primary" asp-action="DownloadPaymentsSummary">
+        <i class="ti ti-download me-1"></i>Download summary
+    </a>
+</div>
+
+<partial name="_PaymentsTable" model="Model" />

@@ -1,0 +1,48 @@
+@model LoginViewModel
+@{
+    ViewData["Title"] = "Login";
+}
+
+<div class="text-center mb-4">
+    <a asp-controller="Auth" asp-action="Login" class="navbar-brand navbar-brand-autodark">
+        <span class="avatar avatar-lg bg-primary-lt">3J</span>
+    </a>
+    <h1 class="h2 mt-3 mb-1">3JBGW Billing</h1>
+    <div class="text-secondary">Sign in as admin, technician, or collector</div>
+</div>
+
+<form class="card card-md" asp-controller="Auth" asp-action="Login" method="post" autocomplete="off">
+    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+    <div class="card-body">
+        <h2 class="card-title text-center mb-4">Login to your account</h2>
+
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="alert alert-danger">@Model.ErrorMessage</div>
+        }
+
+        <div class="mb-3">
+            <label class="form-label">Role</label>
+            <select class="form-select" name="role">
+                <option value="Admin" selected="@(Model.Role == "Admin")">Admin</option>
+                <option value="Technician" selected="@(Model.Role == "Technician")">Technician</option>
+                <option value="Collector" selected="@(Model.Role == "Collector")">Collector</option>
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Username</label>
+            <input type="text" class="form-control" name="username" value="@Model.Username" placeholder="Username" required />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-control" name="password" placeholder="Password" required />
+        </div>
+        <div class="form-footer">
+            <button type="submit" class="btn btn-primary w-100">Sign in</button>
+        </div>
+    </div>
+</form>
+
+<div class="text-center text-secondary mt-3">
+    Local defaults: admin/admin123, tech/tech123, collector/collector123
+</div>

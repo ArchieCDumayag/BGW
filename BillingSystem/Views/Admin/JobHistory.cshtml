@@ -1,0 +1,44 @@
+@model IReadOnlyList<JobTicket>
+@{
+    ViewData["Title"] = "Technician History";
+    var clients = ViewBag.Clients as Dictionary<int, Client> ?? new Dictionary<int, Client>();
+    var technicians = ViewBag.Technicians as Dictionary<int, Technician> ?? new Dictionary<int, Technician>();
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">Technician History</h1>
+        <p class="text-body-secondary mb-0">Historical job activity and completion records.</p>
+    </div>
+    <span class="badge text-bg-light border">@Model.Count jobs</span>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Schedule</th><th>Completed</th><th>Type</th><th>Client</th><th>Technician</th><th>Status</th><th>Remarks</th></tr></thead>
+                <tbody>
+                @if (!Model.Any())
+                {
+                    <tr><td colspan="7" class="text-center text-secondary py-4">No job history yet.</td></tr>
+                }
+                @foreach (var job in Model)
+                {
+                    var clientName = clients.TryGetValue(job.ClientId, out var client) ? client.Name : $"Client #{job.ClientId}";
+                    var technicianName = job.TechnicianId.HasValue && technicians.TryGetValue(job.TechnicianId.Value, out var technician) ? technician.Name : "Unassigned";
+                    <tr>
+                        <td>@job.ScheduledOn</td>
+                        <td>@job.CompletedAt</td>
+                        <td>@job.Type</td>
+                        <td class="fw-semibold">@clientName</td>
+                        <td>@technicianName</td>
+                        <td>@job.Status</td>
+                        <td>@job.Remarks</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

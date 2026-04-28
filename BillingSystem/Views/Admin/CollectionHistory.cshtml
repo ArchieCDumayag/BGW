@@ -1,0 +1,42 @@
+@model IReadOnlyList<Payment>
+@{
+    ViewData["Title"] = "Collection History";
+    var clientMap = ViewBag.ClientMap as Dictionary<int, Client> ?? new Dictionary<int, Client>();
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">Collection History</h1>
+        <p class="text-body-secondary mb-0">All payment collections with collector, method, and reference.</p>
+    </div>
+    <span class="badge text-bg-light border">@Model.Count records</span>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Date</th><th>Client</th><th>Amount</th><th>Method</th><th>Reference</th><th>Collector</th><th>Remarks</th></tr></thead>
+                <tbody>
+                @if (!Model.Any())
+                {
+                    <tr><td colspan="7" class="text-center text-secondary py-4">No collection history yet.</td></tr>
+                }
+                @foreach (var payment in Model)
+                {
+                    var clientName = clientMap.TryGetValue(payment.ClientId, out var client) ? client.Name : $"Client #{payment.ClientId}";
+                    <tr>
+                        <td>@payment.PaidOn</td>
+                        <td class="fw-semibold">@clientName</td>
+                        <td>PHP @payment.Amount.ToString("N0")</td>
+                        <td><span class="badge text-bg-green-lt">@payment.Method</span></td>
+                        <td>@payment.ReferenceNumber</td>
+                        <td>@payment.CollectedBy</td>
+                        <td>@payment.Remarks</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

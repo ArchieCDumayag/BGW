@@ -1,0 +1,135 @@
+@{
+    var action = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
+    var controller = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+
+    var customerActions = new[] { "Clients", "ClientHistory", "CustomerAccount", "Plans", "CoverageTable", "CoverageMap" };
+    var billingActions = new[] { "Payments", "PaymentHistory", "RecentPaidBills", "PaymentReceipt" };
+    var networkActions = new[] { "PonManagement" };
+    var collectorActions = new[] { "AssignCollector", "CollectionHistory" };
+    var technicianActions = new[] { "Tickets", "Jobs", "JobHistory" };
+    var mikrotikActions = new[] { "Pppoe" };
+    var customerAppActions = new[] { "SmsReminders" };
+    var adminActions = new[] { "SettingsIntegrations", "Users", "Settings" };
+
+    var customerOpen = customerActions.Contains(action, StringComparer.OrdinalIgnoreCase);
+    var billingOpen = billingActions.Contains(action, StringComparer.OrdinalIgnoreCase);
+    var networkOpen = networkActions.Contains(action, StringComparer.OrdinalIgnoreCase);
+    var collectorOpen = collectorActions.Contains(action, StringComparer.OrdinalIgnoreCase);
+    var technicianOpen = technicianActions.Contains(action, StringComparer.OrdinalIgnoreCase) || controller.Equals("TechnicianPortal", StringComparison.OrdinalIgnoreCase);
+    var mikrotikOpen = mikrotikActions.Contains(action, StringComparer.OrdinalIgnoreCase);
+    var customerAppOpen = customerAppActions.Contains(action, StringComparer.OrdinalIgnoreCase);
+    var adminOpen = adminActions.Contains(action, StringComparer.OrdinalIgnoreCase);
+
+    string active(string item) => action.Equals(item, StringComparison.OrdinalIgnoreCase) ? "active" : "";
+    string controllerActive(string item) => controller.Equals(item, StringComparison.OrdinalIgnoreCase) ? "active" : "";
+    string dropdownOpen(bool isOpen) => isOpen ? "show" : "";
+}
+
+<ul class="navbar-nav pt-lg-3">
+    @if (User.IsInRole("Admin"))
+    {
+        <li class="nav-item @active("Dashboard")">
+            <a class="nav-link" asp-controller="Admin" asp-action="Dashboard">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-layout-dashboard"></i></span>
+                <span class="nav-link-title">Dashboard</span>
+            </a>
+        </li>
+
+        <li class="nav-item dropdown @dropdownOpen(customerOpen)">
+            <a class="nav-link dropdown-toggle @(customerOpen ? "" : "collapsed")" href="#navbar-customer-management" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="@customerOpen.ToString().ToLowerInvariant()">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-users-group"></i></span>
+                <span class="nav-link-title">Customer Management</span>
+            </a>
+            <div class="dropdown-menu @dropdownOpen(customerOpen)">
+                <a class="dropdown-item @active("Clients")" asp-controller="Admin" asp-action="Clients"><span class="nav-link-icon"><i class="ti ti-user-square"></i></span> Clients</a>
+                <a class="dropdown-item @active("Plans")" asp-controller="Admin" asp-action="Plans"><span class="nav-link-icon"><i class="ti ti-package"></i></span> Plans</a>
+                <a class="dropdown-item @active("CoverageTable")" asp-controller="Admin" asp-action="CoverageTable"><span class="nav-link-icon"><i class="ti ti-map-2"></i></span> Coverage Table</a>
+                <a class="dropdown-item @active("CoverageMap")" asp-controller="Admin" asp-action="CoverageMap"><span class="nav-link-icon"><i class="ti ti-map-pin"></i></span> Coverage Map</a>
+            </div>
+        </li>
+
+        <li class="nav-item dropdown @dropdownOpen(billingOpen)">
+            <a class="nav-link dropdown-toggle @(billingOpen ? "" : "collapsed")" href="#navbar-billing" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="@billingOpen.ToString().ToLowerInvariant()">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-receipt"></i></span>
+                <span class="nav-link-title">Billing</span>
+            </a>
+            <div class="dropdown-menu @dropdownOpen(billingOpen)">
+                <a class="dropdown-item @active("Payments")" asp-controller="Admin" asp-action="Payments"><span class="nav-link-icon"><i class="ti ti-cash"></i></span> Payment Page</a>
+                <a class="dropdown-item @active("PaymentHistory")" asp-controller="Admin" asp-action="PaymentHistory"><span class="nav-link-icon"><i class="ti ti-history"></i></span> Payment History</a>
+                <a class="dropdown-item @active("RecentPaidBills")" asp-controller="Admin" asp-action="RecentPaidBills"><span class="nav-link-icon"><i class="ti ti-clock-check"></i></span> Recent Paid Bills</a>
+            </div>
+        </li>
+
+        <li class="nav-item dropdown @dropdownOpen(networkOpen)">
+            <a class="nav-link dropdown-toggle @(networkOpen ? "" : "collapsed")" href="#navbar-network" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="@networkOpen.ToString().ToLowerInvariant()">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-network"></i></span>
+                <span class="nav-link-title">Network</span>
+            </a>
+            <div class="dropdown-menu @dropdownOpen(networkOpen)">
+                <a class="dropdown-item @active("PonManagement")" asp-controller="Admin" asp-action="PonManagement"><span class="nav-link-icon"><i class="ti ti-broadcast"></i></span> PON Management</a>
+            </div>
+        </li>
+
+        <li class="nav-item dropdown @dropdownOpen(collectorOpen)">
+            <a class="nav-link dropdown-toggle @(collectorOpen ? "" : "collapsed")" href="#navbar-collector" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="@collectorOpen.ToString().ToLowerInvariant()">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-wallet"></i></span>
+                <span class="nav-link-title">Collector</span>
+            </a>
+            <div class="dropdown-menu @dropdownOpen(collectorOpen)">
+                <a class="dropdown-item @active("AssignCollector")" asp-controller="Admin" asp-action="AssignCollector"><span class="nav-link-icon"><i class="ti ti-user-check"></i></span> Assign Collector</a>
+                <a class="dropdown-item @active("CollectionHistory")" asp-controller="Admin" asp-action="CollectionHistory"><span class="nav-link-icon"><i class="ti ti-list-details"></i></span> Collection History</a>
+            </div>
+        </li>
+
+        <li class="nav-item dropdown @dropdownOpen(technicianOpen)">
+            <a class="nav-link dropdown-toggle @(technicianOpen ? "" : "collapsed")" href="#navbar-technician" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="@technicianOpen.ToString().ToLowerInvariant()">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-tool"></i></span>
+                <span class="nav-link-title">Technician</span>
+            </a>
+            <div class="dropdown-menu @dropdownOpen(technicianOpen)">
+                <a class="dropdown-item @active("Tickets")" asp-controller="Admin" asp-action="Tickets"><span class="nav-link-icon"><i class="ti ti-ticket"></i></span> Ticket</a>
+                <a class="dropdown-item @active("Jobs")" asp-controller="Admin" asp-action="Jobs"><span class="nav-link-icon"><i class="ti ti-clipboard-list"></i></span> Jobs</a>
+                <a class="dropdown-item @active("JobHistory")" asp-controller="Admin" asp-action="JobHistory"><span class="nav-link-icon"><i class="ti ti-history-toggle"></i></span> History</a>
+            </div>
+        </li>
+
+        <li class="nav-item dropdown @dropdownOpen(mikrotikOpen)">
+            <a class="nav-link dropdown-toggle @(mikrotikOpen ? "" : "collapsed")" href="#navbar-mikrotik" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="@mikrotikOpen.ToString().ToLowerInvariant()">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-router"></i></span>
+                <span class="nav-link-title">Mikrotik</span>
+            </a>
+            <div class="dropdown-menu @dropdownOpen(mikrotikOpen)">
+                <a class="dropdown-item @active("Pppoe")" asp-controller="Admin" asp-action="Pppoe"><span class="nav-link-icon"><i class="ti ti-route"></i></span> PPPoE</a>
+            </div>
+        </li>
+
+        <li class="nav-item dropdown @dropdownOpen(customerAppOpen)">
+            <a class="nav-link dropdown-toggle @(customerAppOpen ? "" : "collapsed")" href="#navbar-customer-app" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="@customerAppOpen.ToString().ToLowerInvariant()">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-device-mobile-message"></i></span>
+                <span class="nav-link-title">Customer App</span>
+            </a>
+            <div class="dropdown-menu @dropdownOpen(customerAppOpen)">
+                <a class="dropdown-item @active("SmsReminders")" asp-controller="Admin" asp-action="SmsReminders"><span class="nav-link-icon"><i class="ti ti-message-2"></i></span> SMS Reminder</a>
+            </div>
+        </li>
+
+        <li class="nav-item dropdown @dropdownOpen(adminOpen)">
+            <a class="nav-link dropdown-toggle @(adminOpen ? "" : "collapsed")" href="#navbar-admin" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="@adminOpen.ToString().ToLowerInvariant()">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-settings"></i></span>
+                <span class="nav-link-title">Admin</span>
+            </a>
+            <div class="dropdown-menu @dropdownOpen(adminOpen)">
+                <a class="dropdown-item @active("SettingsIntegrations")" asp-controller="Admin" asp-action="SettingsIntegrations"><span class="nav-link-icon"><i class="ti ti-adjustments"></i></span> Settings &amp; Integrations</a>
+            </div>
+        </li>
+    }
+    else if (User.IsInRole("Technician") || User.IsInRole("Collector"))
+    {
+        <li class="nav-item @controllerActive("TechnicianPortal")">
+            <a class="nav-link" asp-controller="TechnicianPortal" asp-action="Index">
+                <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-device-mobile"></i></span>
+                <span class="nav-link-title">My Work</span>
+            </a>
+        </li>
+    }
+</ul>

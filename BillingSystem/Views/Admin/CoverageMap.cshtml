@@ -1,0 +1,109 @@
+@model BillingData
+@using System.Text.Encodings.Web
+@{
+    ViewData["Title"] = "Coverage Map";
+    var mappedClients = Model.Clients.Where(c => c.Latitude.HasValue && c.Longitude.HasValue).ToList();
+    var mappedNaps = Model.NapLocations.Where(n => n.Latitude.HasValue && n.Longitude.HasValue).ToList();
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">Coverage Map</h1>
+        <p class="text-body-secondary mb-0">View client coordinates and NAP locations from your saved records.</p>
+    </div>
+    <span class="badge text-bg-light border">@mappedClients.Count clients mapped</span>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <form asp-action="AddNapLocation" method="post" class="row g-3">
+            <div class="col-lg-3"><label class="form-label">NAP Name</label><input class="form-control" name="Name" placeholder="NAP-01" /></div>
+            <div class="col-lg-3"><label class="form-label">Area Name</label><input class="form-control" name="AreaName" /></div>
+            <div class="col-md-2"><label class="form-label">Latitude</label><input class="form-control" name="Latitude" type="number" step="0.000001" /></div>
+            <div class="col-md-2"><label class="form-label">Longitude</label><input class="form-control" name="Longitude" type="number" step="0.000001" /></div>
+            <div class="col-md-2 d-grid"><button class="btn btn-primary mt-md-4">Add NAP</button></div>
+            <div class="col-12"><label class="form-label">Remarks</label><input class="form-control" name="Remarks" /></div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div id="coverageMapBoard" class="coverage-map-board">
+                    <div class="text-secondary">No coordinates to plot yet.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white fw-semibold">Client Locations</div>
+            <div class="list-group list-group-flush">
+                @foreach (var client in mappedClients.Take(25))
+                {
+                    <div class="list-group-item">
+                        <div class="fw-semibold">@client.Name</div>
+                        <div class="text-secondary small">@client.Area @client.Zone · @client.Latitude, @client.Longitude</div>
+                    </div>
+                }
+                @if (!mappedClients.Any())
+                {
+                    <div class="list-group-item text-secondary">No clients have latitude and longitude yet.</div>
+                }
+            </div>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold">NAP Locations</div>
+            <div class="list-group list-group-flush">
+                @foreach (var nap in Model.NapLocations)
+                {
+                    <div class="list-group-item">
+                        <div class="fw-semibold">@nap.Name</div>
+                        <div class="text-secondary small">@nap.AreaName · @nap.Latitude, @nap.Longitude</div>
+                    </div>
+                }
+                @if (!Model.NapLocations.Any())
+                {
+                    <div class="list-group-item text-secondary">No NAP locations added yet.</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (() => {
+            const points = [
+                @foreach (var client in mappedClients)
+                {
+                    <text>{ kind: "client", label: "@JavaScriptEncoder.Default.Encode(client.Name)", lat: @client.Latitude, lng: @client.Longitude },</text>
+                }
+                @foreach (var nap in mappedNaps)
+                {
+                    <text>{ kind: "nap", label: "@JavaScriptEncoder.Default.Encode(nap.Name)", lat: @nap.Latitude, lng: @nap.Longitude },</text>
+                }
+            ];
+            const board = document.getElementById("coverageMapBoard");
+            if (!board || points.length === 0) return;
+            board.innerHTML = "";
+            const lats = points.map(p => Number(p.lat));
+            const lngs = points.map(p => Number(p.lng));
+            const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+            const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+            const spanLat = Math.max(maxLat - minLat, 0.000001);
+            const spanLng = Math.max(maxLng - minLng, 0.000001);
+            points.forEach(point => {
+                const marker = document.createElement("div");
+                marker.className = `coverage-map-marker ${point.kind}`;
+                marker.title = point.label;
+                marker.style.left = `${8 + ((Number(point.lng) - minLng) / spanLng) * 84}%`;
+                marker.style.top = `${92 - ((Number(point.lat) - minLat) / spanLat) * 84}%`;
+                marker.innerHTML = point.kind === "nap" ? "NAP" : "";
+                board.appendChild(marker);
+            });
+        })();
+    </script>
+}

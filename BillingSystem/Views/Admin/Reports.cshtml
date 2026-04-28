@@ -1,0 +1,50 @@
+@model BillingData
+@{
+    ViewData["Title"] = "Reports";
+    var byArea = Model.Clients
+        .GroupBy(c => c.Area)
+        .Select(g => new
+        {
+            Area = string.IsNullOrWhiteSpace(g.Key) ? "Unassigned" : g.Key,
+            Count = g.Count(),
+            Active = g.Count(c => c.Status.Equals("Active", StringComparison.OrdinalIgnoreCase)),
+            Mrr = g.Where(c => c.Status.Equals("Active", StringComparison.OrdinalIgnoreCase)).Sum(c => c.PlanAmount)
+        })
+        .OrderByDescending(x => x.Mrr);
+}
+
+<h1 class="page-title h3 mb-3">Reports</h1>
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold">Clients by area</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light"><tr><th>Area</th><th>Total</th><th>Active</th><th>MRR</th></tr></thead>
+                        <tbody>
+                        @foreach (var row in byArea)
+                        {
+                            <tr><td>@row.Area</td><td>@row.Count</td><td>@row.Active</td><td>PHP @row.Mrr.ToString("N0")</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold">Financial summary</div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between px-0"><span>Total billed plans</span><strong>PHP @Model.Clients.Sum(c => c.PlanAmount).ToString("N0")</strong></li>
+                    <li class="list-group-item d-flex justify-content-between px-0"><span>Total payments</span><strong>PHP @Model.Payments.Sum(p => p.Amount).ToString("N0")</strong></li>
+                    <li class="list-group-item d-flex justify-content-between px-0"><span>Total expenses</span><strong>PHP @Model.Expenses.Sum(e => e.Amount).ToString("N0")</strong></li>
+                    <li class="list-group-item d-flex justify-content-between px-0"><span>Total balance</span><strong>PHP @Model.Clients.Sum(c => c.Balance).ToString("N0")</strong></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>

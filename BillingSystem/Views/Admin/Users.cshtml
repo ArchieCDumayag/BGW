@@ -1,0 +1,27 @@
+@model IReadOnlyList<UserAccount>
+@{
+    ViewData["Title"] = "User Accounts";
+}
+
+<h1 class="page-title h3 mb-3">User Accounts</h1>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th>Username</th><th>Display Name</th><th>Role</th><th>Technician ID</th><th>Active</th></tr></thead>
+            <tbody>
+            @foreach (var user in Model)
+            {
+                var roleBadge = user.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ? "text-bg-primary" : "text-bg-info";
+                <tr>
+                    <td><code>@user.Username</code></td>
+                    <td>@user.DisplayName</td>
+                    <td><span class="badge @roleBadge">@user.Role</span></td>
+                    <td>@user.TechnicianId</td>
+                    <td><span class="badge rounded-pill @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">@user.IsActive</span></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

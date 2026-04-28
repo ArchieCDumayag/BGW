@@ -1,0 +1,128 @@
+@model IReadOnlyList<Payment>
+@{
+    ViewData["Title"] = "Payments";
+    var clients = ViewBag.Clients as IReadOnlyList<Client> ?? Array.Empty<Client>();
+    var billingRules = ViewBag.ClientBillingRules as IReadOnlyDictionary<int, BillingRuleInfo> ?? new Dictionary<int, BillingRuleInfo>();
+    var currentMonth = DateTime.Today.ToString("yyyy-MM");
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="page-title h3 mb-1">Payments</h1>
+        <p class="text-body-secondary mb-0">Record cash, GCash, bank, and collector payments.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-primary" asp-action="DownloadPaymentsSummary">
+            <i class="ti ti-download me-1"></i>Download summary
+        </a>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <form asp-action="DownloadMonthlyPayments" method="get" class="row g-2 align-items-end">
+            <div class="col-sm-3 col-lg-2">
+                <label class="form-label">Month</label>
+                <input class="form-control" type="month" name="month" value="@currentMonth" />
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <button class="btn btn-primary w-100">
+                    <i class="ti ti-file-spreadsheet me-1"></i>Download monthly report
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-semibold">Add payment</div>
+    <div class="card-body">
+        <form asp-action="AddPayment" method="post" class="row g-3">
+            <div class="col-lg-4">
+                <label class="form-label">Client</label>
+                <select class="form-select" id="paymentClient" name="ClientId" required>
+                    <option value="">Choose client</option>
+                    @foreach (var client in clients)
+                    {
+                        billingRules.TryGetValue(client.Id, out var rule);
+                        <option value="@client.Id"
+                                data-billing-type="@(rule?.BillingType ?? client.BillingType)"
+                                data-schedule="@(rule?.ScheduleLabel ?? "")"
+                                data-due="@(rule?.NextDueDate.ToString("MMM dd, yyyy") ?? "")"
+                                data-current-bill="@client.Bills"
+                                data-discounted-bill="@(rule?.DiscountedCurrentBill ?? client.Bills)"
+                                data-has-discount="@((rule?.HasEarlyDiscount == true).ToString().ToLowerInvariant())"
+                                data-discount="@((rule?.EarlyDiscountAmount ?? 0).ToString("0.##"))"
+                                data-deadline="@(rule?.DiscountDeadline?.ToString("MMM dd, yyyy") ?? "")"
+                                data-deadline-iso="@(rule?.DiscountDeadline?.ToString("yyyy-MM-dd") ?? "")">
+                            @client.Name - @client.PppoeUsername
+                        </option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2"><label class="form-label">Date</label><input class="form-control" id="paymentDate" name="PaidOn" type="date" value="@DateTime.Today.ToString("yyyy-MM-dd")" /></div>
+            <div class="col-md-2"><label class="form-label">Amount</label><input class="form-control" id="paymentAmount" name="Amount" type="number" step="0.01" required /></div>
+            <div class="col-md-2"><label class="form-label">Method</label><select class="form-select" name="Method"><option>Cash</option><option>GCash</option><option>Bank</option></select></div>
+            <div class="col-md-2 d-grid"><button class="btn btn-primary mt-md-4">Add payment</button></div>
+            <div class="col-md-4"><label class="form-label">Reference number</label><input class="form-control" name="ReferenceNumber" /></div>
+            <div class="col-md-4"><label class="form-label">Collected by</label><input class="form-control" name="CollectedBy" /></div>
+            <div class="col-md-4"><label class="form-label">Remarks</label><input class="form-control" name="Remarks" /></div>
+            <div class="col-12">
+                <div id="billingRuleInfo" class="alert alert-info d-none mb-0" role="alert"></div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<partial name="_PaymentsTable" model="Model" />
+
+@section Scripts {
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const clientSelect = document.getElementById("paymentClient");
+            const paymentDate = document.getElementById("paymentDate");
+            const amountInput = document.getElementById("paymentAmount");
+            const info = document.getElementById("billingRuleInfo");
+            let lastSuggestedAmount = "";
+
+            function money(value) {
+                return new Intl.NumberFormat("en-PH", { maximumFractionDigits: 0 }).format(Number(value || 0));
+            }
+
+            function updateBillingRuleInfo() {
+                const selected = clientSelect.options[clientSelect.selectedIndex];
+                if (!selected || !selected.value) {
+                    info.className = "alert alert-info d-none mb-0";
+                    info.textContent = "";
+                    return;
+                }
+
+                const hasDiscount = selected.dataset.hasDiscount === "true";
+                const currentBill = Number(selected.dataset.currentBill || 0);
+                const discountedBill = Number(selected.dataset.discountedBill || currentBill);
+                const discount = Number(selected.dataset.discount || 0);
+                const paidBeforeDeadline = hasDiscount
+                    && paymentDate.value
+                    && selected.dataset.deadlineIso
+                    && paymentDate.value < selected.dataset.deadlineIso;
+                const suggestedBill = paidBeforeDeadline ? discountedBill : currentBill;
+
+                info.className = "alert " + (hasDiscount ? "alert-success" : "alert-info") + " mb-0";
+                info.innerHTML = hasDiscount && paidBeforeDeadline
+                    ? "<strong>Xentronet early discount:</strong> prepaid every 1st day. Current bill PHP " + money(currentBill) + ", less PHP " + money(discount) + " because payment date is before " + selected.dataset.deadline + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>."
+                    : hasDiscount
+                    ? "<strong>Xentronet:</strong> prepaid every 1st day. PHP " + money(discount) + " discount only applies before " + selected.dataset.deadline + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>."
+                    : "<strong>" + selected.dataset.billingType + ":</strong> " + selected.dataset.schedule + ". Next due: " + selected.dataset.due + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>.";
+
+                if ((!amountInput.value || amountInput.value === lastSuggestedAmount) && suggestedBill > 0) {
+                    amountInput.value = suggestedBill.toFixed(2);
+                    lastSuggestedAmount = amountInput.value;
+                }
+            }
+
+            clientSelect.addEventListener("change", updateBillingRuleInfo);
+            paymentDate.addEventListener("change", updateBillingRuleInfo);
+            updateBillingRuleInfo();
+        });
+    </script>
+}
