@@ -661,12 +661,6 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddJob(JobTicket job)
     {
-        if (job.ClientId <= 0)
-        {
-            TempData["JobError"] = "Please choose a client for the job.";
-            return RedirectToAction(nameof(Jobs));
-        }
-
         if (string.IsNullOrWhiteSpace(job.Type))
         {
             TempData["JobError"] = "Please select a job type.";

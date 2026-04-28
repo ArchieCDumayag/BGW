@@ -96,7 +96,8 @@
             }
             @foreach (var job in Model)
             {
-                var clientName = clients.FirstOrDefault(c => c.Id == job.ClientId)?.Name ?? $"Client #{job.ClientId}";
+                var clientName = clients.FirstOrDefault(c => c.Id == job.ClientId)?.Name
+                    ?? (job.ClientId > 0 ? $"Client #{job.ClientId}" : "No client");
                 var technicianName = technicians.FirstOrDefault(t => t.Id == job.TechnicianId)?.Name ?? "Unassigned";
                 var badgeClass = job.Status.Equals("Done", StringComparison.OrdinalIgnoreCase)
                     ? "badge bg-success-lt text-success"
@@ -124,16 +125,6 @@
             </div>
             <div class="modal-body">
                 <div class="row g-3">
-                    <div class="col-lg-6">
-                        <label class="form-label required">Client</label>
-                        <select class="form-select" name="ClientId" required>
-                            <option value="">Choose client</option>
-                            @foreach (var client in clients)
-                            {
-                                <option value="@client.Id">@client.Name - @client.Area @client.Zone</option>
-                            }
-                        </select>
-                    </div>
                     <div class="col-lg-6">
                         <label class="form-label required">Job type</label>
                         <select class="form-select" name="Type" required>
