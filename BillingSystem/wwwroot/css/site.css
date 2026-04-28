@@ -17,6 +17,46 @@ html {
   color: #fff;
 }
 
+.brand-logo-frame {
+  display: inline-flex;
+  width: 3.75rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: .375rem;
+  background: #fff;
+  padding: .25rem;
+  flex: 0 0 auto;
+}
+
+.brand-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.login-logo-frame {
+  display: inline-flex;
+  width: 8rem;
+  height: 4rem;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: .5rem;
+  background: #fff;
+  border: 1px solid var(--tblr-border-color);
+  padding: .5rem;
+}
+
+.login-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
 .nav-link-icon i,
 .dropdown-item .nav-link-icon i {
   font-size: 1.25rem;

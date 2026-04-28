@@ -18,6 +18,7 @@ BillingSystem/app-run.*.log
 
 # Local billing/customer data and imports
 BillingSystem/Data/
+BillingSystem/wwwroot/uploads/
 *.xlsx
 *.xls
 *.csv

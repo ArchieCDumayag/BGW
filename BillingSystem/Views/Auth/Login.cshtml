@@ -18,7 +18,9 @@
     <a asp-controller="Auth" asp-action="Login" class="navbar-brand navbar-brand-autodark">
         @if (!string.IsNullOrWhiteSpace(companyLogoUrl))
         {
-            <span class="avatar avatar-lg bg-white border" style="background-image: url('@companyLogoUrl')"></span>
+            <span class="login-logo-frame">
+                <img class="login-logo-image" src="@companyLogoUrl" alt="@systemDisplayName logo" />
+            </span>
         }
         else
         {

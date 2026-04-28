@@ -45,7 +45,9 @@
                     <a asp-controller="Admin" asp-action="Dashboard" class="text-decoration-none">
                         @if (!string.IsNullOrWhiteSpace(companyLogoUrl))
                         {
-                            <span class="avatar avatar-sm bg-white me-2" style="background-image: url('@companyLogoUrl')"></span>
+                            <span class="brand-logo-frame me-2">
+                                <img class="brand-logo-image" src="@companyLogoUrl" alt="@systemDisplayName logo" />
+                            </span>
                         }
                         else
                         {
