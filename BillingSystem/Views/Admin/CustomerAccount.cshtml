@@ -16,17 +16,14 @@
     var accountMessage = TempData["CustomerAccountMessage"] as string;
     var accountError = TempData["CustomerAccountError"] as string;
     var currentMonth = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
-    var today = DateOnly.FromDateTime(DateTime.Today);
     var currentMonthValue = currentMonth.ToString("yyyy-MM", invariantCulture);
+    var currentBillingMonth = Model.BillingMonths.FirstOrDefault(month => month.Month == currentMonth);
+    var currentBillAmount = currentBillingMonth?.BillAmount ?? client.Bills;
     var planOptions = new[] { 800m, 1000m, 1200m, 1500m };
     var paymentClientLabel = string.IsNullOrWhiteSpace(client.PppoeUsername)
         ? client.Name
         : $"{client.Name} - {client.PppoeUsername}";
-    var suggestedPaymentAmount = billingRule.HasEarlyDiscount
-        && billingRule.DiscountDeadline is DateOnly discountDeadline
-        && today < discountDeadline
-            ? billingRule.DiscountedCurrentBill
-            : client.Bills;
+    var suggestedPaymentAmount = currentBillAmount;
     var suggestedPaymentAmountValue = suggestedPaymentAmount > 0
         ? suggestedPaymentAmount.ToString("0.##", invariantCulture)
         : "";
@@ -116,8 +113,7 @@
                              data-billing-type="@billingRule.BillingType"
                              data-schedule="@billingRule.ScheduleLabel"
                              data-due="@billingRule.NextDueDate.ToString("MMM dd, yyyy")"
-                             data-current-bill="@client.Bills.ToString("0.##", invariantCulture)"
-                             data-discounted-bill="@billingRule.DiscountedCurrentBill.ToString("0.##", invariantCulture)"
+                             data-current-bill="@currentBillAmount.ToString("0.##", invariantCulture)"
                              data-has-discount="@billingRule.HasEarlyDiscount.ToString().ToLowerInvariant()"
                              data-discount="@billingRule.EarlyDiscountAmount.ToString("0.##", invariantCulture)"
                              data-deadline="@(billingRule.DiscountDeadline?.ToString("MMM dd, yyyy") ?? "")"
@@ -176,6 +172,8 @@
             <input type="hidden" name="id" value="@client.Id" />
             <input type="hidden" name="billingMonth" id="editCurrentBillMonth" />
             <input type="hidden" name="returnYear" value="@Model.SelectedYear" />
+            <input type="hidden" name="discountAmount" id="editCurrentBillDiscountAmount" />
+            <input type="hidden" name="discountRemarks" id="editCurrentBillDiscountRemarks" />
             <div class="modal-header">
                 <h5 class="modal-title" id="editCurrentBillModalLabel">Edit current bill</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -186,6 +184,12 @@
                 <div class="input-group">
                     <span class="input-group-text">PHP</span>
                     <input class="form-control text-end" id="editCurrentBillAmount" name="billAmount" type="number" min="0" step="0.01" required />
+                </div>
+                <div class="alert alert-warning py-2 mt-3 mb-0 d-none" id="xentronetDiscountTools">
+                    <div class="small mb-2" id="xentronetDiscountText"></div>
+                    <button class="btn btn-sm btn-warning w-100" type="button" id="applyXentronetDiscount">
+                        <i class="ti ti-discount-2 me-1"></i>Apply discount
+                    </button>
                 </div>
             </div>
             <div class="modal-footer">
@@ -324,6 +328,8 @@
                 {
                     var billMonthValue = bill.Month.ToString("yyyy-MM", invariantCulture);
                     var billAmountValue = bill.BillAmount.ToString("0.##", invariantCulture);
+                    var discountedBillValue = Math.Max(0, bill.BillAmount - BillingSystem.Services.BillingRules.XentronetEarlyDiscount).ToString("0.##", invariantCulture);
+                    var discountAppliedValue = bill.DiscountAmount.ToString("0.##", invariantCulture);
                     <tr>
                         <td class="fw-medium">@bill.MonthLabel</td>
                         <td>@bill.DueDate.ToString("MMM dd, yyyy")</td>
@@ -339,6 +345,11 @@
                                         data-billing-month="@billMonthValue"
                                         data-month-label="@bill.MonthLabel"
                                         data-bill-amount="@billAmountValue"
+                                        data-due-date="@bill.DueDate.ToString("MMM dd, yyyy")"
+                                        data-billing-type="@client.BillingType"
+                                        data-discount="@BillingSystem.Services.BillingRules.XentronetEarlyDiscount.ToString("0.##", invariantCulture)"
+                                        data-discounted-bill="@discountedBillValue"
+                                        data-discount-applied="@discountAppliedValue"
                                         title="Edit current bill"
                                         aria-label="Edit current bill for @bill.MonthLabel">
                                     <i class="ti ti-edit"></i>
@@ -404,19 +415,18 @@
             function updatePaymentSuggestion() {
                 const hasDiscount = info.dataset.hasDiscount === "true";
                 const currentBill = Number(info.dataset.currentBill || 0);
-                const discountedBill = Number(info.dataset.discountedBill || currentBill);
                 const discount = Number(info.dataset.discount || 0);
                 const paidBeforeDeadline = hasDiscount
                     && paymentDate.value
                     && info.dataset.deadlineIso
                     && paymentDate.value < info.dataset.deadlineIso;
-                const suggestedBill = paidBeforeDeadline ? discountedBill : currentBill;
+                const suggestedBill = currentBill;
 
-                info.className = "alert " + (hasDiscount ? "alert-success" : "alert-info") + " mb-0";
+                info.className = "alert " + (hasDiscount && paidBeforeDeadline ? "alert-warning" : "alert-info") + " mb-0";
                 info.innerHTML = hasDiscount && paidBeforeDeadline
-                    ? "<strong>Xentronet early discount:</strong> prepaid every 1st day. Current bill PHP " + money(currentBill) + ", less PHP " + money(discount) + " because payment date is before " + info.dataset.deadline + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>."
+                    ? "<strong>Xentronet discount eligible:</strong> PHP " + money(discount) + " before " + info.dataset.deadline + ". Admin can apply it by editing the current bill. Suggested payment: <strong>PHP " + money(suggestedBill) + "</strong>."
                     : hasDiscount
-                    ? "<strong>Xentronet:</strong> prepaid every 1st day. PHP " + money(discount) + " discount only applies before " + info.dataset.deadline + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>."
+                    ? "<strong>Xentronet:</strong> prepaid every 1st day. Discount is available only before " + info.dataset.deadline + " when admin applies it. Suggested payment: <strong>PHP " + money(suggestedBill) + "</strong>."
                     : "<strong>" + info.dataset.billingType + ":</strong> " + info.dataset.schedule + ". Next due: " + info.dataset.due + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>.";
 
                 if ((!amountInput.value || amountInput.value === lastSuggestedAmount) && suggestedBill > 0) {
@@ -435,6 +445,11 @@
                     const billingMonthInput = document.getElementById("editCurrentBillMonth");
                     const billAmountInput = document.getElementById("editCurrentBillAmount");
                     const monthLabel = document.getElementById("editCurrentBillMonthLabel");
+                    const discountTools = document.getElementById("xentronetDiscountTools");
+                    const discountText = document.getElementById("xentronetDiscountText");
+                    const applyDiscount = document.getElementById("applyXentronetDiscount");
+                    const discountAmountInput = document.getElementById("editCurrentBillDiscountAmount");
+                    const discountRemarksInput = document.getElementById("editCurrentBillDiscountRemarks");
 
                     if (!button || !billingMonthInput || !billAmountInput || !monthLabel) {
                         return;
@@ -443,6 +458,48 @@
                     billingMonthInput.value = button.dataset.billingMonth || "";
                     billAmountInput.value = button.dataset.billAmount || "";
                     monthLabel.textContent = button.dataset.monthLabel || "";
+
+                    const isXentronet = (button.dataset.billingType || "").toLowerCase() === "xentronet";
+                    const discount = Number(button.dataset.discount || 0);
+                    const discountedBill = Number(button.dataset.discountedBill || 0);
+                    const existingDiscount = Number(button.dataset.discountApplied || 0);
+                    const dueDate = button.dataset.dueDate || "the due date";
+                    if (discountAmountInput) {
+                        discountAmountInput.value = isXentronet
+                            ? existingDiscount > 0 ? existingDiscount.toFixed(2) : "0"
+                            : "";
+                    }
+                    if (discountRemarksInput) {
+                        discountRemarksInput.value = isXentronet && existingDiscount > 0
+                            ? "Xentronet discount approved by admin."
+                            : "";
+                    }
+
+                    if (discountTools && discountText && applyDiscount) {
+                        if (isXentronet && existingDiscount > 0) {
+                            discountTools.classList.remove("d-none");
+                            applyDiscount.classList.add("d-none");
+                            discountText.textContent = "PHP " + money(existingDiscount) + " discount already applied to this bill.";
+                            applyDiscount.onclick = null;
+                        } else if (isXentronet && discount > 0) {
+                            discountTools.classList.remove("d-none");
+                            discountText.textContent = "Eligible before " + dueDate + ": PHP " + money(discount) + ". Admin decides if this bill uses it.";
+                            applyDiscount.classList.remove("d-none");
+                            applyDiscount.onclick = function () {
+                                billAmountInput.value = discountedBill.toFixed(2);
+                                if (discountAmountInput) {
+                                    discountAmountInput.value = discount.toFixed(2);
+                                }
+                                if (discountRemarksInput) {
+                                    discountRemarksInput.value = "Xentronet PHP " + money(discount) + " discount approved by admin.";
+                                }
+                            };
+                        } else {
+                            discountTools.classList.add("d-none");
+                            applyDiscount.classList.remove("d-none");
+                            applyDiscount.onclick = null;
+                        }
+                    }
                 });
             }
         });

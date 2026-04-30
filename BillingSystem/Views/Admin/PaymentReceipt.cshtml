@@ -8,13 +8,7 @@
     var companyName = string.IsNullOrWhiteSpace(Model.Settings.CompanyName) ? "3JBGW Billing" : Model.Settings.CompanyName;
     var methodBadge = payment.Method.Contains("gcash", StringComparison.OrdinalIgnoreCase) ? "bg-blue-lt" :
         payment.Method.Contains("cash", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" : "bg-secondary-lt";
-    var planDiscountApplied = client is not null
-        && billingRule?.HasEarlyDiscount == true
-        && billingRule.DiscountDeadline is DateOnly deadline
-        && payment.PaidOn < deadline;
-    var currentPlanCharge = client is null ? 0 :
-        planDiscountApplied ? Math.Max(0, client.PlanAmount - (billingRule?.EarlyDiscountAmount ?? 0)) : client.PlanAmount;
-    var currentCharges = currentPlanCharge;
+    var currentCharges = Model.CurrentBillAmount;
     var previousCharges = client is null ? 0 : client.Balance + payment.Amount;
     var totalBills = previousCharges + currentCharges;
 }
@@ -124,7 +118,7 @@
                     <div>@billingRule.ScheduleLabel. Due date: @billingRule.NextDueDate.ToString("MMM dd, yyyy").</div>
                     @if (billingRule.HasEarlyDiscount)
                     {
-                        <div>PHP @billingRule.EarlyDiscountAmount.ToString("N0") discount before @discountDeadline. Discounted current bill: PHP @billingRule.DiscountedCurrentBill.ToString("N0").</div>
+                        <div>PHP @billingRule.EarlyDiscountAmount.ToString("N0") discount before @discountDeadline when admin applies it to the current bill.</div>
                     }
                 </div>
             }

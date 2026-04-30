@@ -77,11 +77,10 @@ public static class BillingRules
         DateOnly? asOf = null)
     {
         var date = asOf ?? DateOnly.FromDateTime(DateTime.Today);
-        var rule = ForClient(client, date);
         var paidThisMonth = payments
             .Where(p => p.PaidOn.Year == date.Year && p.PaidOn.Month == date.Month)
             .Sum(p => p.Amount);
-        var amountDue = CurrentAmountDue(client, rule, date);
+        var amountDue = CurrentAmountDue(client);
         var partialBalance = paidThisMonth > 0 && paidThisMonth < amountDue ? amountDue - paidThisMonth : 0;
         var unpaid = paidThisMonth == 0 ? amountDue : 0;
         var status = amountDue <= 0 && paidThisMonth > 0 ? "Paid" :
@@ -113,7 +112,6 @@ public static class BillingRules
                 BillingType = "Postpaid",
                 ScheduleLabel = "Every last day of the month",
                 NextDueDate = dueDate,
-                DiscountedCurrentBill = client.Bills,
                 Summary = $"Postpaid due every last day of the month. Next due: {dueDate:MMM dd, yyyy}."
             };
         }
@@ -121,7 +119,6 @@ public static class BillingRules
         if (billingType.Equals("Xentronet", StringComparison.OrdinalIgnoreCase))
         {
             var dueDate = FirstDayDue(date);
-            var discountedBill = Math.Max(0, client.Bills - XentronetEarlyDiscount);
             return new BillingRuleInfo
             {
                 BillingType = "Xentronet",
@@ -130,8 +127,7 @@ public static class BillingRules
                 HasEarlyDiscount = true,
                 EarlyDiscountAmount = XentronetEarlyDiscount,
                 DiscountDeadline = dueDate,
-                DiscountedCurrentBill = discountedBill,
-                Summary = $"Xentronet prepaid due every 1st day. PHP {XentronetEarlyDiscount:N0} discount if paid before {dueDate:MMM dd, yyyy}."
+                Summary = $"Xentronet prepaid due every 1st day. PHP {XentronetEarlyDiscount:N0} discount available before {dueDate:MMM dd, yyyy} when admin applies it."
             };
         }
 
@@ -141,18 +137,12 @@ public static class BillingRules
             BillingType = "Prepaid",
             ScheduleLabel = "Every 1st day of the month",
             NextDueDate = prepaidDueDate,
-            DiscountedCurrentBill = client.Bills,
             Summary = $"Prepaid due every 1st day of the month. Next due: {prepaidDueDate:MMM dd, yyyy}."
         };
     }
 
-    private static decimal CurrentAmountDue(Client client, BillingRuleInfo rule, DateOnly date)
+    private static decimal CurrentAmountDue(Client client)
     {
-        if (rule.HasEarlyDiscount && rule.DiscountDeadline is DateOnly deadline && date < deadline)
-        {
-            return rule.DiscountedCurrentBill;
-        }
-
         return client.Bills;
     }
 

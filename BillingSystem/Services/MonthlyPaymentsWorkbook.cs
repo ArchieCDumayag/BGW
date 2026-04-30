@@ -147,8 +147,9 @@ public static class MonthlyPaymentsWorkbook
 
     private static ClientPaymentRow BuildClientRow(Client client, IReadOnlyList<Payment> payments)
     {
+        var billAmount = WholeNumberPart(client.Bills);
         var amountPaid = payments.Sum(p => p.Amount);
-        var status = GetPaymentStatus(client.Bills, amountPaid);
+        var status = GetPaymentStatus(billAmount, amountPaid);
         var statusStyle = status switch
         {
             "Paid" => 6,
@@ -157,7 +158,7 @@ public static class MonthlyPaymentsWorkbook
             _ => 0
         };
         var rowStyle = client.Status.Equals("DC", StringComparison.OrdinalIgnoreCase) ? 5 : 0;
-        var paymentBalance = status == "Paid" ? 0 : Math.Max(0, client.Bills - amountPaid);
+        var paymentBalance = status == "Paid" ? 0 : Math.Max(0, billAmount - amountPaid);
         var paymentModes = payments
             .Select(p => NormalizePaymentMethod(p.Method))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -188,7 +189,7 @@ public static class MonthlyPaymentsWorkbook
             Cell(client.Balance, rowStyle == 0 ? 4 : rowStyle),
             Cell(client.Advance, rowStyle == 0 ? 4 : rowStyle),
             Cell("", rowStyle),
-            Cell(client.Bills, rowStyle == 0 ? 4 : rowStyle),
+            Cell(billAmount, rowStyle == 0 ? 4 : rowStyle),
             Cell(amountPaid == 0 ? null : amountPaid, amountPaid == 0 ? rowStyle : 4),
             Cell(status, statusStyle),
             Cell(paymentModes.Count == 0 ? "" : string.Join(" / ", paymentModes), rowStyle),
@@ -200,17 +201,29 @@ public static class MonthlyPaymentsWorkbook
 
     private static string GetPaymentStatus(decimal bills, decimal amountPaid)
     {
-        if (amountPaid <= 0)
+        var billAmount = WholeNumberPart(bills);
+        var paidAmount = MoneyAmount(amountPaid);
+        if (paidAmount <= 0)
         {
-            return bills > 0 ? "Unpaid" : "";
+            return billAmount > 0 ? "Unpaid" : "";
         }
 
-        if (bills <= 0 || amountPaid >= bills)
+        if (billAmount <= 0 || paidAmount >= billAmount)
         {
             return "Paid";
         }
 
         return "Partial";
+    }
+
+    private static decimal MoneyAmount(decimal amount)
+    {
+        return Math.Round(amount, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal WholeNumberPart(decimal amount)
+    {
+        return decimal.Truncate(amount);
     }
 
     private static string NormalizePaymentMethod(string method)
@@ -438,7 +451,7 @@ public static class MonthlyPaymentsWorkbook
         <?xml version="1.0" encoding="UTF-8"?>
         <styleSheet xmlns="{{SpreadsheetNamespace}}">
           <numFmts count="1">
-            <numFmt numFmtId="164" formatCode="&quot;PHP &quot;#,##0.00"/>
+            <numFmt numFmtId="164" formatCode="&quot;PHP &quot;#,##0"/>
           </numFmts>
           <fonts count="4">
             <font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>

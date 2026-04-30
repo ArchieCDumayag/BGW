@@ -9,12 +9,10 @@
     var today = DateOnly.FromDateTime(DateTime.Today);
     var invoicePayment = collectionStatus.PaidThisMonth;
     var invoiceAdjustment = client.Advance;
-    var planDiscountApplied = billingRule.HasEarlyDiscount
+    var xentronetDiscountEligible = billingRule.HasEarlyDiscount
         && billingRule.DiscountDeadline is DateOnly deadline
         && today < deadline;
-    var currentPlanCharge = planDiscountApplied
-        ? Math.Max(0, client.PlanAmount - billingRule.EarlyDiscountAmount)
-        : client.PlanAmount;
+    var currentPlanCharge = client.PlanAmount;
     var balanceFromPreviousCharges = Math.Max(0, client.Balance);
     var previousCharges = balanceFromPreviousCharges;
     var totalCredits = invoicePayment + invoiceAdjustment;
@@ -57,7 +55,7 @@
             <div class="card-body">
                 <div class="text-secondary text-uppercase small">Current bill</div>
                 <div class="h2 mb-1">PHP @currentBill.ToString("N0")</div>
-                @if (planDiscountApplied)
+                @if (xentronetDiscountEligible)
                 {
                     <div class="small text-success">Plan PHP @currentPlanCharge.ToString("N0") + previous balance</div>
                 }
@@ -170,9 +168,9 @@
                 <div class="bg-primary-lt rounded-2 p-3 h-100 d-flex flex-column justify-content-center">
                     <div class="text-secondary text-uppercase small">TOTAL AMOUNT DUE</div>
                     <div class="display-6 fw-bold mb-1">PHP @totalAmountDue.ToString("N0")</div>
-                    @if (planDiscountApplied)
+                    @if (xentronetDiscountEligible)
                     {
-                        <div class="small text-success">Current plan includes Xentronet early discount.</div>
+                        <div class="small text-success">Xentronet discount can be applied by admin before @discountDeadline.</div>
                     }
                     else
                     {

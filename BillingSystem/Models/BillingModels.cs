@@ -456,6 +456,7 @@ public sealed class PaymentReceiptViewModel
     public Client? Client { get; init; }
     public SystemSettings Settings { get; init; } = new();
     public BillingRuleInfo? BillingRule { get; init; }
+    public decimal CurrentBillAmount { get; init; }
     public decimal TotalPaid { get; init; }
     public string ReceiptNumber => $"OR-{Payment.Id:000000}";
 }
@@ -573,7 +574,6 @@ public sealed class BillingRuleInfo
     public bool HasEarlyDiscount { get; init; }
     public decimal EarlyDiscountAmount { get; init; }
     public DateOnly? DiscountDeadline { get; init; }
-    public decimal DiscountedCurrentBill { get; init; }
     public string Summary { get; init; } = "";
 }
 
@@ -585,6 +585,19 @@ public sealed class ClientCollectionStatus
     public decimal Paid { get; init; }
     public decimal Unpaid { get; init; }
     public decimal PartialBalance { get; init; }
+    public string Status { get; init; } = "";
+}
+
+public sealed class ClientCurrentBillRow
+{
+    public Client Client { get; init; } = new();
+    public DateOnly DueDate { get; init; }
+    public decimal PreviousBalance { get; init; }
+    public decimal ReferralDiscount { get; init; }
+    public decimal CurrentBill { get; init; }
+    public decimal PaidThisMonth { get; init; }
+    public decimal Balance { get; init; }
+    public decimal Advance { get; init; }
     public string Status { get; init; } = "";
 }
 

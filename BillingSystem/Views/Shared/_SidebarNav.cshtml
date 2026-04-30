@@ -3,7 +3,7 @@
     var controller = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
 
     var customerActions = new[] { "Clients", "ClientHistory", "CustomerAccount", "Plans", "CoverageTable", "CoverageMap" };
-    var billingActions = new[] { "Payments", "PaymentHistory", "RecentPaidBills", "PaymentReceipt" };
+    var billingActions = new[] { "Payments", "PaymentHistory", "PaymentReceipt" };
     var networkActions = new[] { "PonManagement" };
     var collectorActions = new[] { "AssignCollector", "CollectionHistory" };
     var technicianActions = new[] { "Tickets", "Jobs", "JobHistory" };
@@ -56,7 +56,6 @@
             <div class="dropdown-menu @dropdownOpen(billingOpen)">
                 <a class="dropdown-item @active("Payments")" asp-controller="Admin" asp-action="Payments"><span class="nav-link-icon"><i class="ti ti-cash"></i></span> Payment Page</a>
                 <a class="dropdown-item @active("PaymentHistory")" asp-controller="Admin" asp-action="PaymentHistory"><span class="nav-link-icon"><i class="ti ti-history"></i></span> Payment History</a>
-                <a class="dropdown-item @active("RecentPaidBills")" asp-controller="Admin" asp-action="RecentPaidBills"><span class="nav-link-icon"><i class="ti ti-clock-check"></i></span> Recent Paid Bills</a>
             </div>
         </li>
 

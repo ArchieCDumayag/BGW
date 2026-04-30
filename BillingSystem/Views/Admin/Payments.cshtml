@@ -1,9 +1,12 @@
-@model IReadOnlyList<Payment>
+@model IReadOnlyList<ClientCurrentBillRow>
 @{
     ViewData["Title"] = "Payments";
     var clients = ViewBag.Clients as IReadOnlyList<Client> ?? Array.Empty<Client>();
     var billingRules = ViewBag.ClientBillingRules as IReadOnlyDictionary<int, BillingRuleInfo> ?? new Dictionary<int, BillingRuleInfo>();
-    var currentMonth = DateTime.Today.ToString("yyyy-MM");
+    var currentBills = ViewBag.ClientCurrentBills as IReadOnlyDictionary<int, decimal> ?? new Dictionary<int, decimal>();
+    var invariantCulture = System.Globalization.CultureInfo.InvariantCulture;
+    var selectedMonthValue = ViewBag.SelectedMonthValue as string ?? DateTime.Today.ToString("yyyy-MM");
+    var selectedMonthLabel = ViewBag.SelectedMonthLabel as string ?? DateTime.Today.ToString("MMMM yyyy");
 }
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -23,7 +26,7 @@
         <form asp-action="DownloadMonthlyPayments" method="get" class="row g-2 align-items-end">
             <div class="col-sm-3 col-lg-2">
                 <label class="form-label">Month</label>
-                <input class="form-control" type="month" name="month" value="@currentMonth" />
+                <input class="form-control" type="month" name="month" value="@selectedMonthValue" />
             </div>
             <div class="col-sm-6 col-lg-3">
                 <button class="btn btn-primary w-100">
@@ -45,12 +48,12 @@
                     @foreach (var client in clients)
                     {
                         billingRules.TryGetValue(client.Id, out var rule);
+                        var currentBill = currentBills.TryGetValue(client.Id, out var billAmount) ? billAmount : client.Bills;
                         <option value="@client.Id"
                                 data-billing-type="@(rule?.BillingType ?? client.BillingType)"
                                 data-schedule="@(rule?.ScheduleLabel ?? "")"
                                 data-due="@(rule?.NextDueDate.ToString("MMM dd, yyyy") ?? "")"
-                                data-current-bill="@client.Bills"
-                                data-discounted-bill="@(rule?.DiscountedCurrentBill ?? client.Bills)"
+                                data-current-bill="@currentBill.ToString("0.##", invariantCulture)"
                                 data-has-discount="@((rule?.HasEarlyDiscount == true).ToString().ToLowerInvariant())"
                                 data-discount="@((rule?.EarlyDiscountAmount ?? 0).ToString("0.##"))"
                                 data-deadline="@(rule?.DiscountDeadline?.ToString("MMM dd, yyyy") ?? "")"
@@ -74,7 +77,68 @@
     </div>
 </div>
 
-<partial name="_PaymentsTable" model="Model" />
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <span class="fw-semibold">CLIENT LIST</span>
+            <span class="badge text-bg-light border ms-2">@selectedMonthLabel</span>
+        </div>
+        <form asp-action="Payments" method="get" class="d-flex align-items-center gap-2">
+            <label class="small text-secondary mb-0" for="recordsMonth">Month</label>
+            <input class="form-control form-control-sm" id="recordsMonth" type="month" name="month" value="@selectedMonthValue" onchange="this.form.submit()" />
+        </form>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>Client</th>
+                        <th>Type</th>
+                        <th>Due date</th>
+                        <th class="text-end">Previous balance</th>
+                        <th class="text-end">Advance</th>
+                        <th class="text-end">Referral</th>
+                        <th class="text-end">Current bill</th>
+                        <th class="text-end">Amount Paid</th>
+                        <th class="text-end">Balance after paid</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in Model)
+                {
+                    var client = row.Client;
+                    var statusClass = row.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" :
+                        row.Status.Equals("Partial", StringComparison.OrdinalIgnoreCase) ? "bg-yellow-lt" :
+                        row.Status.Equals("Unpaid", StringComparison.OrdinalIgnoreCase) ? "bg-red-lt" : "bg-secondary-lt";
+                    <tr class="payment-current-bill-row"
+                        data-customer-account-url="@Url.Action("CustomerAccount", new { id = client.Id })"
+                        tabindex="0"
+                        role="link"
+                        title="Open customer account">
+                        <td>@client.AccountNumber</td>
+                        <td>
+                            <div class="fw-medium">@client.Name</div>
+                            <div class="small text-secondary">@client.PppoeUsername</div>
+                        </td>
+                        <td>@client.BillingType</td>
+                        <td>@row.DueDate.ToString("MMM dd, yyyy")</td>
+                        <td class="text-end">@(row.PreviousBalance > 0 ? $"PHP {row.PreviousBalance:N0}" : "-")</td>
+                        <td class="text-end">@(row.Advance > 0 ? $"PHP {row.Advance:N0}" : "-")</td>
+                        <td class="text-end">@(row.ReferralDiscount > 0 ? $"PHP {row.ReferralDiscount:N0}" : "-")</td>
+                        <td class="text-end">PHP @row.CurrentBill.ToString("N0")</td>
+                        <td class="text-end">@(row.PaidThisMonth > 0 ? $"PHP {row.PaidThisMonth:N0}" : "-")</td>
+                        <td class="text-end">@(row.Balance > 0 ? $"PHP {row.Balance:N0}" : "-")</td>
+                        <td><span class="badge @statusClass">@row.Status</span></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
 
 @section Scripts {
     <script>
@@ -84,6 +148,31 @@
             const amountInput = document.getElementById("paymentAmount");
             const info = document.getElementById("billingRuleInfo");
             let lastSuggestedAmount = "";
+
+            document.querySelectorAll(".payment-current-bill-row").forEach(function (row) {
+                row.style.cursor = "pointer";
+
+                row.addEventListener("click", function (event) {
+                    if (event.target.closest("button, a, input, select, textarea, label")) {
+                        return;
+                    }
+
+                    if (row.dataset.customerAccountUrl) {
+                        window.location.href = row.dataset.customerAccountUrl;
+                    }
+                });
+
+                row.addEventListener("keydown", function (event) {
+                    if (event.key !== "Enter" && event.key !== " ") {
+                        return;
+                    }
+
+                    if (row.dataset.customerAccountUrl) {
+                        event.preventDefault();
+                        window.location.href = row.dataset.customerAccountUrl;
+                    }
+                });
+            });
 
             function money(value) {
                 return new Intl.NumberFormat("en-PH", { maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -99,19 +188,18 @@
 
                 const hasDiscount = selected.dataset.hasDiscount === "true";
                 const currentBill = Number(selected.dataset.currentBill || 0);
-                const discountedBill = Number(selected.dataset.discountedBill || currentBill);
                 const discount = Number(selected.dataset.discount || 0);
                 const paidBeforeDeadline = hasDiscount
                     && paymentDate.value
                     && selected.dataset.deadlineIso
                     && paymentDate.value < selected.dataset.deadlineIso;
-                const suggestedBill = paidBeforeDeadline ? discountedBill : currentBill;
+                const suggestedBill = currentBill;
 
-                info.className = "alert " + (hasDiscount ? "alert-success" : "alert-info") + " mb-0";
+                info.className = "alert " + (hasDiscount && paidBeforeDeadline ? "alert-warning" : "alert-info") + " mb-0";
                 info.innerHTML = hasDiscount && paidBeforeDeadline
-                    ? "<strong>Xentronet early discount:</strong> prepaid every 1st day. Current bill PHP " + money(currentBill) + ", less PHP " + money(discount) + " because payment date is before " + selected.dataset.deadline + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>."
+                    ? "<strong>Xentronet discount eligible:</strong> PHP " + money(discount) + " before " + selected.dataset.deadline + ". Admin can apply it from the customer account current bill. Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>."
                     : hasDiscount
-                    ? "<strong>Xentronet:</strong> prepaid every 1st day. PHP " + money(discount) + " discount only applies before " + selected.dataset.deadline + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>."
+                    ? "<strong>Xentronet:</strong> prepaid every 1st day. Discount is available only before " + selected.dataset.deadline + " when admin applies it. Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>."
                     : "<strong>" + selected.dataset.billingType + ":</strong> " + selected.dataset.schedule + ". Next due: " + selected.dataset.due + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>.";
 
                 if ((!amountInput.value || amountInput.value === lastSuggestedAmount) && suggestedBill > 0) {

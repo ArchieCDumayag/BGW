@@ -116,12 +116,20 @@ public sealed class AdminController(
 
         clients = sort switch
         {
+            "account" => clients.OrderBy(c => AccountSortKey(c.AccountNumber)).ThenBy(c => c.AccountNumber ?? "").ThenBy(c => c.Name ?? ""),
             "account-desc" => clients.OrderByDescending(c => AccountSortKey(c.AccountNumber)).ThenByDescending(c => c.AccountNumber ?? "").ThenBy(c => c.Name ?? ""),
             "name" => clients.OrderBy(c => c.Name ?? ""),
+            "name-desc" => clients.OrderByDescending(c => c.Name ?? ""),
             "type" => clients.OrderBy(c => c.BillingType ?? "").ThenBy(c => c.Name ?? ""),
+            "type-desc" => clients.OrderByDescending(c => c.BillingType ?? "").ThenBy(c => c.Name ?? ""),
             "status" => clients.OrderBy(c => c.Status ?? "").ThenBy(c => c.Name ?? ""),
+            "status-desc" => clients.OrderByDescending(c => c.Status ?? "").ThenBy(c => c.Name ?? ""),
+            "plan" => clients.OrderBy(c => c.PlanAmount).ThenBy(c => c.Name ?? ""),
+            "plan-desc" => clients.OrderByDescending(c => c.PlanAmount).ThenBy(c => c.Name ?? ""),
             "area" => clients.OrderBy(c => c.Area ?? "").ThenBy(c => c.Zone ?? "").ThenBy(c => c.Name ?? ""),
+            "area-desc" => clients.OrderByDescending(c => c.Area ?? "").ThenBy(c => c.Zone ?? "").ThenBy(c => c.Name ?? ""),
             "pppoe" => clients.OrderBy(c => string.IsNullOrWhiteSpace(c.PppoeUsername)).ThenBy(c => c.PppoeUsername ?? "").ThenBy(c => c.Name ?? ""),
+            "pppoe-desc" => clients.OrderBy(c => string.IsNullOrWhiteSpace(c.PppoeUsername)).ThenByDescending(c => c.PppoeUsername ?? "").ThenBy(c => c.Name ?? ""),
             _ => clients.OrderBy(c => AccountSortKey(c.AccountNumber)).ThenBy(c => c.AccountNumber ?? "").ThenBy(c => c.Name ?? "")
         };
 
@@ -451,7 +459,13 @@ public sealed class AdminController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> UpdateMonthlyBill(int id, string? billingMonth, decimal billAmount, int? returnYear)
+    public async Task<IActionResult> UpdateMonthlyBill(
+        int id,
+        string? billingMonth,
+        decimal billAmount,
+        int? returnYear,
+        decimal? discountAmount,
+        string? discountRemarks)
     {
         var data = await store.GetAsync();
         var client = data.Clients.FirstOrDefault(c => c.Id == id);
@@ -473,7 +487,26 @@ public sealed class AdminController(
             return RedirectToAction(nameof(CustomerAccount), new { id });
         }
 
-        UpsertMonthlyBillOverride(data, client.Id, month.Value, billAmount, "Current bill changed from customer account.");
+        decimal? appliedDiscount = null;
+        string? appliedDiscountRemarks = null;
+        if (discountAmount.HasValue)
+        {
+            appliedDiscount = Math.Max(0, discountAmount.Value);
+            appliedDiscountRemarks = appliedDiscount.Value > 0
+                ? string.IsNullOrWhiteSpace(discountRemarks)
+                    ? $"Admin approved PHP {appliedDiscount:N0} discount."
+                    : discountRemarks.Trim()
+                : "";
+        }
+
+        UpsertMonthlyBillOverride(
+            data,
+            client.Id,
+            month.Value,
+            billAmount,
+            "Current bill changed from customer account.",
+            appliedDiscount,
+            appliedDiscountRemarks);
 
         await store.SaveAsync(data);
         TempData["CustomerAccountMessage"] = $"Current bill for {month.Value:MMMM yyyy} updated to PHP {billAmount:N0}.";
@@ -619,13 +652,19 @@ public sealed class AdminController(
         data.TrafficSamples.Clear();
     }
 
-    public async Task<IActionResult> Payments()
+    public async Task<IActionResult> Payments(string? month)
     {
         var data = await store.GetAsync();
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var currentMonth = new DateOnly(today.Year, today.Month, 1);
+        var selectedMonth = ParseMonth(month) ?? currentMonth;
         ViewBag.Clients = data.Clients.OrderBy(c => c.Name).ToList();
         ViewBag.ClientMap = data.Clients.ToDictionary(c => c.Id);
         ViewBag.ClientBillingRules = data.Clients.ToDictionary(c => c.Id, c => BillingRules.ForClient(c));
-        return View(data.Payments.OrderByDescending(p => p.PaidOn).ThenByDescending(p => p.Id).ToList());
+        ViewBag.ClientCurrentBills = CurrentBillAmountsForMonth(data, selectedMonth);
+        ViewBag.SelectedMonthValue = selectedMonth.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        ViewBag.SelectedMonthLabel = selectedMonth.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
+        return View(BuildClientCurrentBillRows(data, selectedMonth));
     }
 
     public async Task<IActionResult> PaymentHistory()
@@ -634,14 +673,6 @@ public sealed class AdminController(
         ViewBag.ClientMap = data.Clients.ToDictionary(c => c.Id);
         ViewBag.PaymentTableTitle = "Payment history";
         return View(data.Payments.OrderByDescending(p => p.PaidOn).ThenByDescending(p => p.Id).ToList());
-    }
-
-    public async Task<IActionResult> RecentPaidBills()
-    {
-        var data = await store.GetAsync();
-        ViewBag.ClientMap = data.Clients.ToDictionary(c => c.Id);
-        ViewBag.PaymentTableTitle = "Recent Paid Bills";
-        return View(data.Payments.OrderByDescending(p => p.PaidOn).ThenByDescending(p => p.Id).Take(50).ToList());
     }
 
     public async Task<IActionResult> DownloadPaymentsSummary()
@@ -726,12 +757,14 @@ public sealed class AdminController(
         }
 
         var receiptClient = data.Clients.FirstOrDefault(c => c.Id == payment.ClientId);
+        var paymentMonth = new DateOnly(payment.PaidOn.Year, payment.PaidOn.Month, 1);
         var model = new PaymentReceiptViewModel
         {
             Payment = payment,
             Client = receiptClient,
             Settings = data.Settings,
             BillingRule = receiptClient is null ? null : BillingRules.ForClient(receiptClient, payment.PaidOn),
+            CurrentBillAmount = receiptClient is null ? 0 : CurrentBillAmountForMonth(data, receiptClient, paymentMonth),
             TotalPaid = receiptClient is null ? 0 : data.Payments.Where(p => p.ClientId == receiptClient.Id).Sum(p => p.Amount)
         };
 
@@ -2746,15 +2779,145 @@ public sealed class AdminController(
             amount = client.Bills;
         }
 
-        if (!client.BillingType.Equals("Xentronet", StringComparison.OrdinalIgnoreCase))
+        return amount;
+    }
+
+    private static IReadOnlyDictionary<int, decimal> CurrentBillAmountsForMonth(BillingData data, DateOnly month)
+    {
+        return data.Clients.ToDictionary(
+            client => client.Id,
+            client => WholeNumberPart(PaymentPageBillAmountForMonth(data, client, month)));
+    }
+
+    private static IReadOnlyList<ClientCurrentBillRow> BuildClientCurrentBillRows(BillingData data, DateOnly month)
+    {
+        return data.Clients
+            .OrderBy(client => AccountSortKey(client.AccountNumber))
+            .ThenBy(client => client.AccountNumber ?? "")
+            .Select(client =>
+            {
+                var previousBalance = WholeNumberPart(PreviousBalanceForMonth(data, client, month));
+                var previousAdvance = WholeNumberPart(PreviousAdvanceForMonth(data, client, month));
+                var referralDiscount = WholeNumberPart(ReferralDiscountForMonth(data, client, month));
+                var currentBill = WholeNumberPart(PaymentPageBillAmountForMonth(data, client, month));
+                var paidThisMonth = data.Payments
+                    .Where(payment => payment.ClientId == client.Id
+                        && payment.PaidOn.Year == month.Year
+                        && payment.PaidOn.Month == month.Month)
+                    .Sum(payment => payment.Amount);
+                var balance = Math.Max(0, currentBill - paidThisMonth);
+                var status = currentBill <= 0 ? "No bill" :
+                    paidThisMonth >= currentBill ? "Paid" :
+                    paidThisMonth > 0 ? "Partial" : "Unpaid";
+
+                return new ClientCurrentBillRow
+                {
+                    Client = client,
+                    DueDate = DueDateForBillingMonth(client, month),
+                    PreviousBalance = previousBalance,
+                    ReferralDiscount = referralDiscount,
+                    CurrentBill = currentBill,
+                    PaidThisMonth = paidThisMonth,
+                    Balance = balance,
+                    Advance = previousAdvance,
+                    Status = status
+                };
+            })
+            .ToList();
+    }
+
+    private static decimal PaymentPageBillAmountForMonth(BillingData data, Client client, DateOnly month)
+    {
+        var billOverride = MonthlyBillOverrideFor(
+            client,
+            month,
+            data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id));
+        return billOverride?.BillAmount ?? client.Bills;
+    }
+
+    private static decimal PreviousAdvanceForMonth(BillingData data, Client client, DateOnly month)
+    {
+        var billOverride = MonthlyBillOverrideFor(
+            client,
+            month,
+            data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id));
+        if (billOverride?.Advance is decimal advance)
         {
-            return amount;
+            return advance;
         }
 
-        var dueDate = DueDateForBillingMonth(client, month);
-        return monthPayments.Any(p => p.PaidOn < dueDate)
-            ? Math.Max(0, amount - BillingRules.XentronetEarlyDiscount)
-            : amount;
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var currentMonth = new DateOnly(today.Year, today.Month, 1);
+        if (month != currentMonth)
+        {
+            return 0;
+        }
+
+        var installedMonth = client.DateInstalled is DateOnly installed
+            ? new DateOnly(installed.Year, installed.Month, 1)
+            : (DateOnly?)null;
+        return installedMonth is null || installedMonth < month ? client.Advance : 0;
+    }
+
+    private static decimal ReferralDiscountForMonth(BillingData data, Client client, DateOnly month)
+    {
+        var billOverride = MonthlyBillOverrideFor(
+            client,
+            month,
+            data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id));
+        return billOverride?.DiscountAmount ?? 0;
+    }
+
+    private static decimal PreviousBalanceForMonth(BillingData data, Client client, DateOnly month)
+    {
+        var billOverride = MonthlyBillOverrideFor(
+            client,
+            month,
+            data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id));
+        if (billOverride?.Balance is decimal balance)
+        {
+            return balance;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var currentMonth = new DateOnly(today.Year, today.Month, 1);
+        if (month != currentMonth)
+        {
+            return 0;
+        }
+
+        var installedMonth = client.DateInstalled is DateOnly installed
+            ? new DateOnly(installed.Year, installed.Month, 1)
+            : (DateOnly?)null;
+        return installedMonth is null || installedMonth < month ? client.Balance : 0;
+    }
+
+    private static decimal CurrentBillAmountForMonth(BillingData data, Client client, DateOnly month)
+    {
+        var billOverride = MonthlyBillOverrideFor(
+            client,
+            month,
+            data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id));
+        if (billOverride is not null)
+        {
+            return billOverride.BillAmount;
+        }
+
+        var monthPayments = data.Payments
+            .Where(payment => payment.ClientId == client.Id
+                && payment.PaidOn.Year == month.Year
+                && payment.PaidOn.Month == month.Month)
+            .ToList();
+        return MonthlyPlanAmount(
+            client,
+            month,
+            monthPayments,
+            data.PlanChanges.Where(change => change.ClientId == client.Id));
+    }
+
+    private static decimal WholeNumberPart(decimal amount)
+    {
+        return decimal.Truncate(amount);
     }
 
     private static ClientMonthlyBillOverride? MonthlyBillOverrideFor(
@@ -2779,7 +2942,14 @@ public sealed class AdminController(
         return planChange?.PlanAmount ?? client.PlanAmount;
     }
 
-    private static void UpsertMonthlyBillOverride(BillingData data, int clientId, DateOnly billingMonth, decimal billAmount, string remarks)
+    private static void UpsertMonthlyBillOverride(
+        BillingData data,
+        int clientId,
+        DateOnly billingMonth,
+        decimal billAmount,
+        string remarks,
+        decimal? discountAmount = null,
+        string? discountRemarks = null)
     {
         var existing = data.MonthlyBillOverrides
             .FirstOrDefault(overrideBill => overrideBill.ClientId == clientId && overrideBill.BillingMonth == billingMonth);
@@ -2789,6 +2959,12 @@ public sealed class AdminController(
             existing.BillAmount = billAmount;
             existing.RecordedAt = DateTime.Now;
             existing.Remarks = remarks;
+            if (discountAmount.HasValue)
+            {
+                existing.DiscountAmount = discountAmount.Value;
+                existing.DiscountRemarks = discountRemarks ?? "";
+            }
+
             return;
         }
 
@@ -2798,6 +2974,8 @@ public sealed class AdminController(
             ClientId = clientId,
             BillingMonth = billingMonth,
             BillAmount = billAmount,
+            DiscountAmount = discountAmount ?? 0,
+            DiscountRemarks = discountRemarks ?? "",
             RecordedAt = DateTime.Now,
             Remarks = remarks
         });

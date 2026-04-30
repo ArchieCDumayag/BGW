@@ -33,7 +33,7 @@ public static class ClientReportWorkbook
                 archive,
                 "xl/worksheets/sheet1.xml",
                 BuildClientListRows(data.Clients),
-                [12, 14, 14, 14, 12, 16, 14, 28, 34, 28, 14, 14, 14],
+                [12, 14, 14, 14, 12, 16, 14, 28, 34, 28],
                 freezeRows: 1);
 
             for (var index = 0; index < months.Count; index++)
@@ -77,10 +77,7 @@ public static class ClientReportWorkbook
                 Cell("Zone", 2),
                 Cell("Name", 2),
                 Cell("PPPoE", 2),
-                Cell("FACEBOOK", 2),
-                Cell("Balance", 2),
-                Cell("Advance", 2),
-                Cell("Bills", 2))
+                Cell("FACEBOOK", 2))
         };
 
         rows.AddRange(clients
@@ -96,10 +93,7 @@ public static class ClientReportWorkbook
                 Cell(client.Zone),
                 Cell(client.Name),
                 Cell(client.PppoeUsername),
-                Cell(client.FacebookAccount),
-                Cell(client.Balance, 4),
-                Cell(client.Advance, 4),
-                Cell(client.Bills, 4))));
+                Cell(client.FacebookAccount))));
 
         return rows;
     }
@@ -221,7 +215,7 @@ public static class ClientReportWorkbook
         var amountPaid = payments.Sum(payment => payment.Amount);
         var billAmount = notInstalledYet && billOverride is null && amountPaid <= 0
             ? 0
-            : billOverride?.BillAmount ?? client.Bills;
+            : WholeNumberPart(billOverride?.BillAmount ?? client.Bills);
         var openingBalance = billOverride?.Balance ?? 0;
         var openingAdvance = billOverride?.Advance ?? 0;
         var status = GetPaymentStatus(billAmount, amountPaid);
@@ -277,17 +271,29 @@ public static class ClientReportWorkbook
 
     private static string GetPaymentStatus(decimal billAmount, decimal amountPaid)
     {
-        if (amountPaid <= 0)
+        var dueAmount = WholeNumberPart(billAmount);
+        var paidAmount = MoneyAmount(amountPaid);
+        if (paidAmount <= 0)
         {
-            return billAmount > 0 ? "Unpaid" : "";
+            return dueAmount > 0 ? "Unpaid" : "";
         }
 
-        if (billAmount <= 0 || amountPaid >= billAmount)
+        if (dueAmount <= 0 || paidAmount >= dueAmount)
         {
             return "Paid";
         }
 
         return "Partial";
+    }
+
+    private static decimal MoneyAmount(decimal amount)
+    {
+        return Math.Round(amount, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal WholeNumberPart(decimal amount)
+    {
+        return decimal.Truncate(amount);
     }
 
     private static int AccountSortKey(string accountNumber)
@@ -530,7 +536,7 @@ public static class ClientReportWorkbook
         <?xml version="1.0" encoding="UTF-8"?>
         <styleSheet xmlns="{{SpreadsheetNamespace}}">
           <numFmts count="1">
-            <numFmt numFmtId="164" formatCode="&quot;PHP &quot;#,##0.00"/>
+            <numFmt numFmtId="164" formatCode="&quot;PHP &quot;#,##0"/>
           </numFmts>
           <fonts count="4">
             <font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
