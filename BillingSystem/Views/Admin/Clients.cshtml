@@ -164,7 +164,7 @@
                 <div class="col-md-2"><label class="form-label">Status</label><input class="form-control" name="Status" value="Active" /></div>
                 <div class="col-md-2">
                     <label class="form-label">Type</label>
-                    <select class="form-select" name="BillingType">
+                    <select class="form-select" name="BillingType" id="newBillingType">
                         <option>Prepaid</option>
                         <option>Postpaid</option>
                         <option>Xentronet</option>
@@ -211,6 +211,7 @@
                     </datalist>
                 </div>
                 <div class="col-md-2"><label class="form-label">Prorated Bill</label><input class="form-control" name="Bills" id="newProratedBill" type="number" step="0.01" readonly /></div>
+                <div class="col-md-2"><label class="form-label">Due date</label><input class="form-control" id="newFirstDueDate" readonly /></div>
                 <div class="col-md-4"><label class="form-label">Landmark</label><input class="form-control" name="Address" /></div>
                 <div class="col-md-2 d-grid align-items-end"><button class="btn btn-primary mt-md-4">Save client</button></div>
             </form>
@@ -506,7 +507,9 @@
             const newPppoeUsername = document.getElementById("newPppoeUsername");
             const newPlanAmount = document.getElementById("newPlanAmount");
             const newDateInstalled = document.getElementById("newDateInstalled");
+            const newBillingType = document.getElementById("newBillingType");
             const newProratedBill = document.getElementById("newProratedBill");
+            const newFirstDueDate = document.getElementById("newFirstDueDate");
             let lastPppoePrefix = "";
 
             function syncPppoePrefix() {
@@ -525,6 +528,26 @@
                 lastPppoePrefix = prefix;
             }
 
+            function formatDate(date) {
+                return date.toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "2-digit",
+                    year: "numeric"
+                });
+            }
+
+            function firstBillDueDate(installed, billingType) {
+                const isPostpaid = (billingType || "").toLowerCase() === "postpaid";
+                if (isPostpaid) {
+                    return new Date(installed.getFullYear(), installed.getMonth() + 1, 0);
+                }
+
+                const firstDay = new Date(installed.getFullYear(), installed.getMonth(), 1);
+                return installed > firstDay
+                    ? new Date(installed.getFullYear(), installed.getMonth() + 1, 1)
+                    : firstDay;
+            }
+
             function syncProratedBill() {
                 if (!newPlanAmount || !newDateInstalled || !newProratedBill) {
                     return;
@@ -533,19 +556,34 @@
                 const plan = Number.parseFloat(newPlanAmount.value || "0");
                 if (!plan || !newDateInstalled.value) {
                     newProratedBill.value = "";
+                    if (newFirstDueDate) {
+                        newFirstDueDate.value = "";
+                    }
                     return;
                 }
 
                 const installed = new Date(`${newDateInstalled.value}T00:00:00`);
                 if (Number.isNaN(installed.getTime())) {
                     newProratedBill.value = "";
+                    if (newFirstDueDate) {
+                        newFirstDueDate.value = "";
+                    }
                     return;
                 }
 
+                const dueDate = firstBillDueDate(installed, newBillingType ? newBillingType.value : "");
+                const cycleEnd = (newBillingType && newBillingType.value.toLowerCase() === "postpaid")
+                    ? dueDate
+                    : dueDate.getMonth() === installed.getMonth()
+                        ? new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0)
+                        : new Date(dueDate.getFullYear(), dueDate.getMonth(), 0);
                 const daysInMonth = new Date(installed.getFullYear(), installed.getMonth() + 1, 0).getDate();
-                const billableDays = Math.max(0, daysInMonth - installed.getDate() + 1);
+                const billableDays = Math.max(0, cycleEnd.getDate() - installed.getDate() + 1);
                 const amount = Math.round((plan / daysInMonth * billableDays + Number.EPSILON) * 100) / 100;
                 newProratedBill.value = amount.toFixed(2);
+                if (newFirstDueDate) {
+                    newFirstDueDate.value = formatDate(dueDate);
+                }
             }
 
             if (newArea) {
@@ -559,6 +597,10 @@
 
             if (newDateInstalled) {
                 newDateInstalled.addEventListener("change", syncProratedBill);
+            }
+
+            if (newBillingType) {
+                newBillingType.addEventListener("change", syncProratedBill);
             }
 
             syncProratedBill();

@@ -251,7 +251,7 @@ public sealed class JsonBillingStore(IWebHostEnvironment environment) : IBilling
     {
         client.AccountNumber ??= "";
         client.Status ??= "Active";
-        client.BillingType ??= "Prepaid";
+        client.BillingType = BillingRules.NormalizeBillingType(client.BillingType);
         client.Area ??= "";
         client.Zone ??= "";
         client.Name ??= "";

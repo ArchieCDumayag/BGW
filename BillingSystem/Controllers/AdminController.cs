@@ -491,9 +491,9 @@ public sealed class AdminController(
             client.AccountNumber = NextAccountNumber(data.Clients);
             client.DateInstalled ??= DateOnly.FromDateTime(DateTime.Today);
             client.Status = string.IsNullOrWhiteSpace(client.Status) ? "Active" : client.Status;
-            client.BillingType = string.IsNullOrWhiteSpace(client.BillingType) ? "Prepaid" : client.BillingType;
+            client.BillingType = BillingRules.NormalizeBillingType(client.BillingType);
             client.Referral = NormalizeReferralText(client.Referral);
-            client.Bills = ProratedBill(client.PlanAmount, client.DateInstalled.Value);
+            client.Bills = BillingRules.ProratedFirstBill(client.PlanAmount, client.DateInstalled.Value, client.BillingType);
             if (client.Balance <= 0)
             {
                 client.Balance = Math.Max(0, client.Bills - client.Advance);
@@ -505,7 +505,7 @@ public sealed class AdminController(
                 client.Id,
                 new DateOnly(client.DateInstalled.Value.Year, client.DateInstalled.Value.Month, 1),
                 client.Bills,
-                $"Prorated first bill from installation date {client.DateInstalled.Value:MMM dd, yyyy}.");
+                $"{client.BillingType} prorated first bill from installation date {client.DateInstalled.Value:MMM dd, yyyy}.");
 
             var referralResult = ApplyReferralDiscount(data, client);
             if (!string.IsNullOrWhiteSpace(referralResult))
@@ -525,7 +525,7 @@ public sealed class AdminController(
             existing.DateInstalled = client.DateInstalled;
             existing.Name = client.Name;
             existing.Status = client.Status;
-            existing.BillingType = client.BillingType;
+            existing.BillingType = BillingRules.NormalizeBillingType(client.BillingType);
             if (existing.PlanAmount != client.PlanAmount)
             {
                 var today = DateOnly.FromDateTime(DateTime.Today);
@@ -2287,18 +2287,6 @@ public sealed class AdminController(
         return (lastNumber + 1).ToString(CultureInfo.InvariantCulture);
     }
 
-    private static decimal ProratedBill(decimal planAmount, DateOnly installedOn)
-    {
-        if (planAmount <= 0)
-        {
-            return 0;
-        }
-
-        var daysInMonth = DateTime.DaysInMonth(installedOn.Year, installedOn.Month);
-        var billableDays = Math.Max(0, daysInMonth - installedOn.Day + 1);
-        return Math.Round(planAmount / daysInMonth * billableDays, 2, MidpointRounding.AwayFromZero);
-    }
-
     private static string ApplyReferralDiscount(BillingData data, Client newClient)
     {
         var referralText = NormalizeReferralText(newClient.Referral);
@@ -2889,19 +2877,7 @@ public sealed class AdminController(
 
     private static DateOnly DueDateForBillingMonth(Client client, DateOnly month)
     {
-        if (client.DateInstalled is DateOnly installed
-            && installed.Year == month.Year
-            && installed.Month == month.Month)
-        {
-            return installed;
-        }
-
-        if (client.BillingType.Equals("Postpaid", StringComparison.OrdinalIgnoreCase))
-        {
-            return new DateOnly(month.Year, month.Month, DateTime.DaysInMonth(month.Year, month.Month));
-        }
-
-        return new DateOnly(month.Year, month.Month, 1);
+        return BillingRules.DueDateForBillingMonth(client, month);
     }
 
     private static string JoinDistinct(IEnumerable<string> values)

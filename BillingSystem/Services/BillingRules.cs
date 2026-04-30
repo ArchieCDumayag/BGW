@@ -6,6 +6,71 @@ public static class BillingRules
 {
     public const decimal XentronetEarlyDiscount = 200;
 
+    public static string NormalizeBillingType(string? billingType)
+    {
+        var value = billingType?.Trim() ?? "";
+        if (value.Equals("Postpaid", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Postpaid";
+        }
+
+        if (value.Equals("Xentronet", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("XentroNet", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Xentronet";
+        }
+
+        return "Prepaid";
+    }
+
+    public static decimal ProratedFirstBill(decimal planAmount, DateOnly installedOn, string? billingType)
+    {
+        if (planAmount <= 0)
+        {
+            return 0;
+        }
+
+        var type = NormalizeBillingType(billingType);
+        var dueDate = FirstBillDueDate(installedOn, type);
+        var cycleEnd = type.Equals("Postpaid", StringComparison.OrdinalIgnoreCase)
+            ? dueDate
+            : dueDate.Day == 1 && dueDate.Month == installedOn.Month
+                ? dueDate.AddMonths(1).AddDays(-1)
+                : dueDate.AddDays(-1);
+        var daysInMonth = DateTime.DaysInMonth(installedOn.Year, installedOn.Month);
+        var billableDays = Math.Max(0, cycleEnd.Day - installedOn.Day + 1);
+        return Math.Round(planAmount / daysInMonth * billableDays, 2, MidpointRounding.AwayFromZero);
+    }
+
+    public static DateOnly FirstBillDueDate(DateOnly installedOn, string? billingType)
+    {
+        var type = NormalizeBillingType(billingType);
+        if (type.Equals("Postpaid", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DateOnly(installedOn.Year, installedOn.Month, DateTime.DaysInMonth(installedOn.Year, installedOn.Month));
+        }
+
+        var firstDay = new DateOnly(installedOn.Year, installedOn.Month, 1);
+        return installedOn > firstDay ? firstDay.AddMonths(1) : firstDay;
+    }
+
+    public static DateOnly DueDateForBillingMonth(Client client, DateOnly month)
+    {
+        if (client.DateInstalled is DateOnly installed
+            && installed.Year == month.Year
+            && installed.Month == month.Month)
+        {
+            return FirstBillDueDate(installed, client.BillingType);
+        }
+
+        if (NormalizeBillingType(client.BillingType).Equals("Postpaid", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DateOnly(month.Year, month.Month, DateTime.DaysInMonth(month.Year, month.Month));
+        }
+
+        return new DateOnly(month.Year, month.Month, 1);
+    }
+
     public static ClientCollectionStatus CollectionStatusForClient(
         Client client,
         IEnumerable<Payment> payments,
@@ -39,7 +104,8 @@ public static class BillingRules
     public static BillingRuleInfo ForClient(Client client, DateOnly? asOf = null)
     {
         var date = asOf ?? DateOnly.FromDateTime(DateTime.Today);
-        if (client.BillingType.Equals("Postpaid", StringComparison.OrdinalIgnoreCase))
+        var billingType = NormalizeBillingType(client.BillingType);
+        if (billingType.Equals("Postpaid", StringComparison.OrdinalIgnoreCase))
         {
             var dueDate = LastDayDue(date);
             return new BillingRuleInfo
@@ -52,7 +118,7 @@ public static class BillingRules
             };
         }
 
-        if (client.BillingType.Equals("Xentronet", StringComparison.OrdinalIgnoreCase))
+        if (billingType.Equals("Xentronet", StringComparison.OrdinalIgnoreCase))
         {
             var dueDate = FirstDayDue(date);
             var discountedBill = Math.Max(0, client.Bills - XentronetEarlyDiscount);

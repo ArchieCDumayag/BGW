@@ -73,6 +73,8 @@ public static partial class ClientListExcelImporter
         var parsed = ParseClientList(workbook, importYear, savedFileName, []);
         data.Clients = parsed.Clients;
         var history = ImportPaymentHistory(workbook, data.Clients);
+        var activeBillingMonth = LatestBillingMonth(history.MonthlyBillOverrides, importYear);
+        ApplyImportedProratedFirstBills(data.Clients, history.MonthlyBillOverrides, activeBillingMonth);
         data.Payments = history.Payments;
         data.MonthlyBillOverrides = history.MonthlyBillOverrides;
         data.PlanChanges = [];
@@ -107,6 +109,7 @@ public static partial class ClientListExcelImporter
 
             data.Clients.Add(client);
         }
+        ApplyImportedProratedFirstBills(parsed.Clients, data.MonthlyBillOverrides, FallbackBillingMonth(importYear));
 
         return new ClientListImportResult(
             parsed.TotalRows,
@@ -178,15 +181,17 @@ public static partial class ClientListExcelImporter
                 status = Text(Get(row, headers, "Active"));
             }
             var billingType = BillingTypeValue(GetAny(row, headers, "Type", "Billing Type", "BillingType", "Account Type"));
+            var dateInstalled = DateValue(GetAny(row, headers, "Date Installed", "Date", "Installed", "Installation Date"));
+            var planAmount = Money(Get(row, headers, "Plan"));
 
             clients.Add(new Client
             {
                 Id = assignedId,
                 AccountNumber = string.IsNullOrWhiteSpace(accountNumber) ? assignedId.ToString(CultureInfo.InvariantCulture) : accountNumber,
-                DateInstalled = DateValue(GetAny(row, headers, "Date Installed", "Date", "Installed", "Installation Date")),
+                DateInstalled = dateInstalled,
                 Status = string.IsNullOrWhiteSpace(status) ? "Active" : status,
                 BillingType = billingType,
-                PlanAmount = Money(Get(row, headers, "Plan")),
+                PlanAmount = planAmount,
                 Area = area,
                 Zone = zone,
                 Name = name,
@@ -228,6 +233,88 @@ public static partial class ClientListExcelImporter
             payments,
             monthlyBillOverrides,
             payments.Count(payment => payment.ClientId == 0));
+    }
+
+    private static void ApplyImportedProratedFirstBills(
+        IReadOnlyList<Client> clients,
+        List<ClientMonthlyBillOverride> monthlyBillOverrides,
+        DateOnly activeBillingMonth)
+    {
+        var nextOverrideId = monthlyBillOverrides.Select(overrideBill => overrideBill.Id).DefaultIfEmpty().Max() + 1;
+        foreach (var client in clients)
+        {
+            client.BillingType = BillingRules.NormalizeBillingType(client.BillingType);
+            if (client.DateInstalled is not DateOnly installed || client.PlanAmount <= 0)
+            {
+                continue;
+            }
+
+            var firstMonth = MonthStart(installed);
+            var firstBill = BillingRules.ProratedFirstBill(client.PlanAmount, installed, client.BillingType);
+            var dueDate = BillingRules.FirstBillDueDate(installed, client.BillingType);
+            var existingOverride = monthlyBillOverrides
+                .Where(overrideBill => overrideBill.ClientId == client.Id && overrideBill.BillingMonth == firstMonth)
+                .OrderByDescending(overrideBill => overrideBill.Id)
+                .FirstOrDefault();
+
+            if (existingOverride is not null)
+            {
+                if (firstMonth == activeBillingMonth)
+                {
+                    existingOverride.BillAmount = firstBill;
+                }
+
+                existingOverride.RecordedAt = DateTime.Now;
+                existingOverride.Remarks = ProratedImportRemarks(existingOverride.Remarks, installed, dueDate);
+            }
+            else if (firstMonth == activeBillingMonth)
+            {
+                monthlyBillOverrides.Add(new ClientMonthlyBillOverride
+                {
+                    Id = nextOverrideId++,
+                    ClientId = client.Id,
+                    BillingMonth = firstMonth,
+                    BillAmount = firstBill,
+                    RecordedAt = DateTime.Now,
+                    Remarks = ProratedImportRemarks("", installed, dueDate)
+                });
+            }
+
+            if (firstMonth == activeBillingMonth)
+            {
+                client.Bills = firstBill;
+                if (client.Balance <= 0)
+                {
+                    client.Balance = Math.Max(0, firstBill - client.Advance);
+                }
+            }
+        }
+    }
+
+    private static DateOnly LatestBillingMonth(IReadOnlyList<ClientMonthlyBillOverride> monthlyBillOverrides, int importYear)
+    {
+        return monthlyBillOverrides
+            .Select(overrideBill => overrideBill.BillingMonth)
+            .DefaultIfEmpty(FallbackBillingMonth(importYear))
+            .Max();
+    }
+
+    private static DateOnly FallbackBillingMonth(int importYear)
+    {
+        return new DateOnly(importYear, DateTime.Today.Month, 1);
+    }
+
+    private static string ProratedImportRemarks(string remarks, DateOnly installed, DateOnly dueDate)
+    {
+        var note = $"Prorated first bill from installation date {installed:MMM dd, yyyy}; due {dueDate:MMM dd, yyyy}.";
+        if (string.IsNullOrWhiteSpace(remarks))
+        {
+            return note;
+        }
+
+        return remarks.Contains("Prorated first bill", StringComparison.OrdinalIgnoreCase)
+            ? remarks
+            : $"{remarks} {note}";
     }
 
     private static List<ClientMonthlyBillOverride> ImportMonthlyBills(
@@ -294,11 +381,21 @@ public static partial class ClientListExcelImporter
                     continue;
                 }
 
+                clientById.TryGetValue(clientId, out var matchedClient);
                 var plan = Money(Cell(row, planColumn));
                 var balance = Money(Cell(row, balanceColumn));
                 var advance = Money(Cell(row, advanceColumn));
                 var bill = Math.Max(0, balance + plan - advance);
-                if (bill <= 0 && billColumn is not null)
+                var effectivePlan = plan > 0 ? plan : matchedClient?.PlanAmount ?? 0;
+                DateOnly? firstBillInstalled = null;
+                if (matchedClient?.DateInstalled is DateOnly installed
+                    && MonthStart(installed) == month.Value
+                    && effectivePlan > 0)
+                {
+                    firstBillInstalled = installed;
+                    bill = BillingRules.ProratedFirstBill(effectivePlan, installed, matchedClient!.BillingType);
+                }
+                else if (bill <= 0 && billColumn is not null)
                 {
                     bill = Money(Cell(row, billColumn));
                 }
@@ -315,7 +412,12 @@ public static partial class ClientListExcelImporter
                         Balance = balance,
                         Advance = advance,
                         RecordedAt = DateTime.Now,
-                        Remarks = $"Imported from {sheetName}."
+                        Remarks = firstBillInstalled is DateOnly proratedInstalled
+                            ? ProratedImportRemarks(
+                                $"Imported from {sheetName}.",
+                                proratedInstalled,
+                                BillingRules.FirstBillDueDate(proratedInstalled, matchedClient!.BillingType))
+                            : $"Imported from {sheetName}."
                     });
                 }
 
@@ -545,7 +647,7 @@ public static partial class ClientListExcelImporter
             return "Prepaid";
         }
 
-        return text;
+        return BillingRules.NormalizeBillingType(text);
     }
 
     private static HashSet<string> ExistingClientKeys(IReadOnlyList<Client> clients)
@@ -732,6 +834,11 @@ public static partial class ClientListExcelImporter
         return MonthNumbers.TryGetValue(monthName, out var month)
             ? new DateOnly(int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture), month, 1)
             : null;
+    }
+
+    private static DateOnly MonthStart(DateOnly date)
+    {
+        return new DateOnly(date.Year, date.Month, 1);
     }
 
     private static Dictionary<string, List<List<object?>>> ReadWorkbook(Stream stream)
