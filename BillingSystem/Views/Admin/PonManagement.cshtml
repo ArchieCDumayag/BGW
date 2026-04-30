@@ -1,57 +1,316 @@
-@model IReadOnlyList<OltDevice>
+@using System.Globalization
+@model PonManagementViewModel
 @{
     ViewData["Title"] = "PON Management";
+}
+
+@functions {
+    private static string UsageWidth(decimal usage)
+    {
+        return Math.Min(100m, Math.Max(0m, usage)).ToString("0.##", CultureInfo.InvariantCulture);
+    }
+
+    private static string UsageText(decimal usage)
+    {
+        return usage.ToString("0.#", CultureInfo.InvariantCulture);
+    }
+
+    private static string UsageBarClass(decimal usage)
+    {
+        if (usage >= 90)
+        {
+            return "bg-danger";
+        }
+
+        if (usage >= 75)
+        {
+            return "bg-warning";
+        }
+
+        return "bg-primary";
+    }
 }
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
     <div>
         <h1 class="page-title h3 mb-1">PON Management</h1>
-        <p class="text-body-secondary mb-0">OLT inventory by technology, site, and total PON ports.</p>
+        <p class="text-body-secondary mb-0">OLT, site, PON capacity, and assigned customer monitoring.</p>
     </div>
-    <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#addOltForm">
-        <i class="ti ti-plus me-1"></i>Add OLT
-    </button>
+    <div class="d-flex flex-wrap gap-2">
+        <form asp-action="SyncOltClients" method="post">
+            <button class="btn btn-outline-primary">
+                <i class="ti ti-refresh me-1"></i>Sync PON Usage
+            </button>
+        </form>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#addOltForm">
+            <i class="ti ti-plus me-1"></i>Add OLT
+        </button>
+    </div>
 </div>
 
-<div class="collapse show mb-3" id="addOltForm">
+@if (TempData["PonSuccess"] is string success)
+{
+    <div class="alert alert-success">@success</div>
+}
+@if (TempData["PonError"] is string error)
+{
+    <div class="alert alert-warning">@error</div>
+}
+
+<div class="row row-cards mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">OLT</div>
+                <div class="h3 mb-0">@Model.OltRows.Count</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">PON Ports</div>
+                <div class="h3 mb-0">@Model.TotalPonPorts</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="text-secondary text-uppercase small">Used Ports</div>
+                <div class="h3 mb-0">@Model.UsedPorts</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                    <div>
+                        <div class="text-secondary text-uppercase small">PON Usage</div>
+                        <div class="h3 mb-0">@UsageText(Model.PonUsagePercent)%</div>
+                    </div>
+                    <div class="text-secondary small text-end">Last sync<br />@(Model.LastSyncedAt?.ToString("MMM dd, h:mm tt") ?? "Never")</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="collapse @(Model.OltDevices.Any() ? "" : "show") mb-3" id="addOltForm">
     <div class="card border-0 shadow-sm">
         <div class="card-body">
             <form asp-action="SaveOlt" method="post" class="row g-3">
-                <div class="col-lg-3"><label class="form-label">OLT Name</label><input class="form-control" name="OltName" required /></div>
+                <div class="col-lg-3">
+                    <label class="form-label">OLT</label>
+                    <input class="form-control" name="OltName" placeholder="OLT 1" required />
+                </div>
+                <div class="col-lg-5">
+                    <label class="form-label">Management URL</label>
+                    <input class="form-control" name="ManagementUrl" placeholder="https://192.168.80.2/action/main.html" />
+                </div>
                 <div class="col-md-2">
-                    <label class="form-label">Technology</label>
+                    <label class="form-label">Username</label>
+                    <input class="form-control" name="Username" autocomplete="off" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Password</label>
+                    <input class="form-control" name="Password" type="password" autocomplete="new-password" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Type</label>
                     <select class="form-select" name="Technology"><option>Gpon</option><option>Epon</option></select>
                 </div>
-                <div class="col-lg-3"><label class="form-label">Site</label><input class="form-control" name="Site" /></div>
-                <div class="col-md-2"><label class="form-label">Total PON Ports</label><input class="form-control" name="TotalPonPorts" type="number" min="0" /></div>
-                <div class="col-md-2 d-grid"><button class="btn btn-primary mt-md-4">Add OLT</button></div>
+                <div class="col-lg-4">
+                    <label class="form-label">Site</label>
+                    <input class="form-control" name="Site" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Total PON Ports</label>
+                    <input class="form-control" name="TotalPonPorts" type="number" min="0" />
+                </div>
+                <div class="col-md-3 d-grid">
+                    <button class="btn btn-primary mt-md-4">Add OLT</button>
+                </div>
             </form>
         </div>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-semibold">OLT Monitoring</div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-sm table-hover align-middle mb-0">
-                <thead class="table-light"><tr><th>OLT Name</th><th>Technology</th><th>Site</th><th>Total PON Ports</th><th class="text-end">Actions</th></tr></thead>
+                <thead class="table-light">
+                    <tr>
+                        <th>OLT</th>
+                        <th>Type</th>
+                        <th>Site</th>
+                        <th>PON Usage</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
                 <tbody>
-                @if (!Model.Any())
+                @if (!Model.OltRows.Any())
                 {
                     <tr><td colspan="5" class="text-center text-secondary py-4">No OLT records yet.</td></tr>
                 }
-                @foreach (var olt in Model)
+                @foreach (var row in Model.OltRows)
                 {
+                    var editId = $"editOlt{row.Olt.Id}";
                     <tr>
-                        <td class="fw-semibold">@olt.OltName</td>
-                        <td><span class="badge text-bg-purple-lt">@olt.Technology</span></td>
-                        <td>@olt.Site</td>
-                        <td>@olt.TotalPonPorts</td>
+                        <td>
+                            <div class="fw-semibold">@row.Olt.OltName</div>
+                            @if (!string.IsNullOrWhiteSpace(row.Olt.ManagementUrl))
+                            {
+                                <a class="small" href="@row.Olt.ManagementUrl" target="_blank" rel="noopener noreferrer">
+                                    <i class="ti ti-external-link me-1"></i>Open OLT
+                                </a>
+                            }
+                        </td>
+                        <td><span class="badge text-bg-purple-lt">@row.Olt.Technology</span></td>
+                        <td>@(string.IsNullOrWhiteSpace(row.Olt.Site) ? "-" : row.Olt.Site)</td>
+                        <td style="min-width: 14rem;">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="progress flex-fill" style="height: .5rem;">
+                                    <div class="progress-bar @UsageBarClass(row.PonUsagePercent)" style="width: @UsageWidth(row.PonUsagePercent)%"></div>
+                                </div>
+                                <span class="fw-semibold">@UsageText(row.PonUsagePercent)%</span>
+                            </div>
+                            <div class="small text-secondary">@row.UsedPorts used / @row.TotalCapacity capacity</div>
+                        </td>
                         <td class="text-end">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#@editId">
+                                Edit
+                            </button>
                             <form asp-action="DeleteOlt" method="post" class="d-inline">
-                                <input type="hidden" name="id" value="@olt.Id" />
+                                <input type="hidden" name="id" value="@row.Olt.Id" />
                                 <button class="btn btn-sm btn-outline-danger">Delete</button>
                             </form>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="5" class="p-0 border-0">
+                            <div class="collapse" id="@editId">
+                                <div class="bg-light border-top p-3">
+                                    <form asp-action="SaveOlt" method="post" class="row g-2 align-items-end">
+                                        <input type="hidden" name="Id" value="@row.Olt.Id" />
+                                        <input type="hidden" name="ManagementUrl" value="@row.Olt.ManagementUrl" />
+                                        <input type="hidden" name="Username" value="@row.Olt.Username" />
+                                        <div class="col-md-3">
+                                            <label class="form-label">OLT</label>
+                                            <input class="form-control" name="OltName" value="@row.Olt.OltName" required />
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label">Type</label>
+                                            <input class="form-control" name="Technology" value="@row.Olt.Technology" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">Site</label>
+                                            <input class="form-control" name="Site" value="@row.Olt.Site" />
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label">PON Ports</label>
+                                            <input class="form-control" name="TotalPonPorts" type="number" min="0" value="@row.Olt.TotalPonPorts" />
+                                        </div>
+                                        <div class="col-md-1 d-grid">
+                                            <button class="btn btn-primary">Save</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-semibold">PON Port Monitoring</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>PON Port</th>
+                        <th>Customer Capacity</th>
+                        <th>Total NAP</th>
+                        <th>Total Capacity</th>
+                        <th>Used Ports</th>
+                        <th>Assigned Customers</th>
+                        <th>PON Usage</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @if (!Model.PonRows.Any())
+                {
+                    <tr><td colspan="8" class="text-center text-secondary py-4">No PON ports found yet.</td></tr>
+                }
+                @foreach (var row in Model.PonRows)
+                {
+                    var editId = $"editPon{row.Olt.Id}_{row.PonPort.PonPort}".Replace(" ", "");
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">@row.PonPort.PonPort</div>
+                            <div class="small text-secondary">@row.Olt.OltName</div>
+                        </td>
+                        <td>@row.PonPort.CustomerCapacity</td>
+                        <td>@row.PonPort.TotalNap</td>
+                        <td>@row.TotalCapacity</td>
+                        <td>@row.UsedPorts</td>
+                        <td>@row.AssignedCustomers</td>
+                        <td style="min-width: 13rem;">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="progress flex-fill" style="height: .5rem;">
+                                    <div class="progress-bar @UsageBarClass(row.PonUsagePercent)" style="width: @UsageWidth(row.PonUsagePercent)%"></div>
+                                </div>
+                                <span class="fw-semibold">@UsageText(row.PonUsagePercent)%</span>
+                            </div>
+                        </td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#@editId">
+                                Edit
+                            </button>
+                            @if (row.PonPort.Id > 0)
+                            {
+                                <form asp-action="DeleteOltPonPort" method="post" class="d-inline">
+                                    <input type="hidden" name="id" value="@row.PonPort.Id" />
+                                    <button class="btn btn-sm btn-outline-danger">Delete</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="8" class="p-0 border-0">
+                            <div class="collapse" id="@editId">
+                                <div class="bg-light border-top p-3">
+                                    <form asp-action="SaveOltPonPort" method="post" class="row g-2 align-items-end">
+                                        <input type="hidden" name="Id" value="@row.PonPort.Id" />
+                                        <input type="hidden" name="OltDeviceId" value="@row.Olt.Id" />
+                                        <input type="hidden" name="PonPort" value="@row.PonPort.PonPort" />
+                                        <div class="col-md-3">
+                                            <label class="form-label">PON Port</label>
+                                            <input class="form-control" value="@row.PonPort.PonPort" disabled />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label">Customer Capacity</label>
+                                            <input class="form-control" value="@row.PonPort.CustomerCapacity" disabled />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label">Total NAP</label>
+                                            <input class="form-control" name="TotalNap" type="number" min="0" value="@row.PonPort.TotalNap" />
+                                        </div>
+                                        <div class="col-md-3 d-grid">
+                                            <button class="btn btn-primary">Save</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                 }

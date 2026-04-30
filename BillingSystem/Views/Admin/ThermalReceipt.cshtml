@@ -1,0 +1,76 @@
+@model ThermalReceiptViewModel
+@{
+    ViewData["Title"] = "Thermal Receipt";
+    var client = Model.Client;
+}
+
+<style>
+    @@page {
+        size: 80mm auto;
+        margin: 4mm;
+    }
+</style>
+
+<div class="thermal-toolbar d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 d-print-none">
+    <div>
+        <h1 class="page-title h3 mb-1">Thermal Receipt</h1>
+        <p class="text-body-secondary mb-0">@Model.OfficialReceiptNumber</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" asp-action="CustomerAccount" asp-route-id="@client.Id">
+            <i class="ti ti-arrow-left me-1"></i>Customer account
+        </a>
+        <button class="btn btn-outline-primary" type="button" onclick="window.print()">
+            <i class="ti ti-file-type-pdf me-1"></i>Save as PDF
+        </button>
+        <button class="btn btn-primary" type="button" onclick="window.print()">
+            <i class="ti ti-printer me-1"></i>Print
+        </button>
+    </div>
+</div>
+
+<div class="thermal-shell">
+    <div class="thermal-receipt">
+        <div class="thermal-center thermal-company">@Model.CompanyName</div>
+        <div class="thermal-center">@Model.CompanyAddress</div>
+
+        <div class="thermal-rule"></div>
+        <div class="thermal-center thermal-title">PAYMENT RECEIPT</div>
+        <div class="thermal-rule"></div>
+
+        <div class="thermal-row"><span>Official Receipt No:</span><strong>@Model.OfficialReceiptNumber</strong></div>
+        <div class="thermal-row"><span>Date Today:</span><strong>@Model.ReceiptDate.ToString("MMM dd, yyyy")</strong></div>
+        <div class="thermal-row"><span>Account:</span><strong>@Model.AccountLabel</strong></div>
+
+        <div class="thermal-gap"></div>
+        <div class="thermal-row"><span>Subscriber:</span><strong>@client.Name</strong></div>
+        <div class="thermal-row"><span>Plan:</span><strong>@Model.PlanLabel</strong></div>
+        <div class="thermal-row"><span>Plan Amount:</span><strong>PHP @Model.PlanAmount.ToString("N0")</strong></div>
+
+        <div class="thermal-rule"></div>
+        <div class="thermal-label">Payment Summary:</div>
+
+        <div class="thermal-row"><span>Date of Payment:</span><strong>@Model.DateOfPayment.ToString("MMM dd, yyyy")</strong></div>
+        <div class="thermal-row"><span>Due Date:</span><strong>@Model.DueDate.ToString("MMM dd, yyyy")</strong></div>
+        <div class="thermal-row"><span>Previous Balance:</span><strong>PHP @Model.PreviousBalance.ToString("N0")</strong></div>
+        <div class="thermal-row"><span>Advance:</span><strong>PHP @Model.Advance.ToString("N0")</strong></div>
+
+        <div class="thermal-rule"></div>
+        <div class="thermal-row thermal-total-row"><span>TOTAL AMOUNT DUE:</span><strong>PHP @Model.TotalCharge.ToString("N0")</strong></div>
+        <div class="thermal-rule"></div>
+
+        <div class="thermal-row thermal-total-row"><span>TOTAL PAID:</span><strong>PHP @Model.TotalPaid.ToString("N0")</strong></div>
+
+        <div class="thermal-gap"></div>
+        <div class="thermal-row"><span>Current Balance:</span><strong>PHP @Model.CurrentBalance.ToString("N0")</strong></div>
+        <div class="thermal-row"><span>Advance:</span><strong>PHP @Model.CurrentAdvance.ToString("N0")</strong></div>
+
+        <div class="thermal-gap"></div>
+        <div class="thermal-center thermal-thanks">
+            Thank you for choosing THRE3J!
+        </div>
+        <div class="thermal-center">
+            For support call: @Model.CompanyContact
+        </div>
+    </div>
+</div>

@@ -19,6 +19,8 @@ public sealed class BillingData
     public List<CoverageArea> CoverageAreas { get; set; } = [];
     public List<NapLocation> NapLocations { get; set; } = [];
     public List<OltDevice> OltDevices { get; set; } = [];
+    public List<OltPonPort> OltPonPorts { get; set; } = [];
+    public List<OltOnuClient> OltOnuClients { get; set; } = [];
     public List<CollectorAssignment> CollectorAssignments { get; set; } = [];
     public List<SupportTicket> Tickets { get; set; } = [];
     public List<UserActivityLog> ActivityLogs { get; set; } = [];
@@ -187,6 +189,41 @@ public sealed class ServicePlan
     public string Type { get; set; } = "Prepaid";
 }
 
+public sealed class PlansPageViewModel
+{
+    public IReadOnlyList<PlanWithCountsViewModel> Plans { get; init; } = [];
+    public IReadOnlyList<MikrotikPlanProfileViewModel> MikrotikProfiles { get; init; } = [];
+    public bool IsMikrotikConnected { get; init; }
+    public string MikrotikConnectionMessage { get; init; } = "";
+    public string RouterHost { get; init; } = "";
+    public int TotalLocalClients { get; init; }
+    public int TotalMikrotikUsers { get; init; }
+}
+
+public sealed class PlanWithCountsViewModel
+{
+    public ServicePlan Plan { get; init; } = new();
+    public int LocalClientCount { get; init; }
+    public int MikrotikUserCount { get; init; }
+    public MikrotikPlanProfileViewModel? MikrotikProfile { get; init; }
+}
+
+public sealed class MikrotikPlanProfileViewModel
+{
+    public string Name { get; init; } = "";
+    public string RateLimit { get; init; } = "";
+    public string LocalAddress { get; init; } = "";
+    public string RemoteAddress { get; init; } = "";
+    public string DnsServer { get; init; } = "";
+    public string OnlyOne { get; init; } = "";
+    public string Comment { get; init; } = "";
+    public int TotalUsers { get; init; }
+    public int OnlineUsers { get; init; }
+    public int OfflineUsers { get; init; }
+    public int DisabledUsers { get; init; }
+    public bool IsMatchedToLocalPlan { get; init; }
+}
+
 public sealed class CoverageArea
 {
     public int Id { get; set; }
@@ -209,7 +246,67 @@ public sealed class OltDevice
     public string OltName { get; set; } = "";
     public string Technology { get; set; } = "Gpon";
     public string Site { get; set; } = "";
+    public string ManagementUrl { get; set; } = "";
+    public string Username { get; set; } = "";
+    public string Password { get; set; } = "";
     public int TotalPonPorts { get; set; }
+}
+
+public sealed class OltPonPort
+{
+    public int Id { get; set; }
+    public int OltDeviceId { get; set; }
+    public string PonPort { get; set; } = "";
+    public int CustomerCapacity { get; set; } = 128;
+    public int TotalNap { get; set; }
+}
+
+public sealed class OltOnuClient
+{
+    public int Id { get; set; }
+    public int OltDeviceId { get; set; }
+    public string OltName { get; set; } = "";
+    public string PonPort { get; set; } = "";
+    public string OnuId { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string Description { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string Profile { get; set; } = "";
+    public string AuthMode { get; set; } = "";
+    public string SerialNumber { get; set; } = "";
+    public DateTime SyncedAt { get; set; } = DateTime.Now;
+}
+
+public sealed class PonManagementViewModel
+{
+    public IReadOnlyList<OltDevice> OltDevices { get; init; } = [];
+    public IReadOnlyList<OltMonitoringRowViewModel> OltRows { get; init; } = [];
+    public IReadOnlyList<OltPonMonitoringRowViewModel> PonRows { get; init; } = [];
+    public DateTime? LastSyncedAt { get; init; }
+    public int TotalPonPorts { get; init; }
+    public int TotalCapacity { get; init; }
+    public int UsedPorts { get; init; }
+    public int AssignedCustomers { get; init; }
+    public decimal PonUsagePercent { get; init; }
+}
+
+public sealed class OltMonitoringRowViewModel
+{
+    public OltDevice Olt { get; init; } = new();
+    public int TotalCapacity { get; init; }
+    public int UsedPorts { get; init; }
+    public int AssignedCustomers { get; init; }
+    public decimal PonUsagePercent { get; init; }
+}
+
+public sealed class OltPonMonitoringRowViewModel
+{
+    public OltPonPort PonPort { get; init; } = new();
+    public OltDevice Olt { get; init; } = new();
+    public int TotalCapacity { get; init; }
+    public int UsedPorts { get; init; }
+    public int AssignedCustomers { get; init; }
+    public decimal PonUsagePercent { get; init; }
 }
 
 public sealed class CollectorAssignment
@@ -339,11 +436,18 @@ public sealed class CustomerBillingMonth
     public decimal DiscountAmount { get; init; }
     public string DiscountNote { get; init; } = "";
     public string Status { get; init; } = "";
+    public IReadOnlyList<CustomerBillingPaymentBreakdown> PaymentBreakdown { get; init; } = [];
     public string PaymentDates { get; init; } = "";
     public string Methods { get; init; } = "";
     public string References { get; init; } = "";
     public string Collectors { get; init; } = "";
     public string Remarks { get; init; } = "";
+}
+
+public sealed class CustomerBillingPaymentBreakdown
+{
+    public DateOnly PaidOn { get; init; }
+    public decimal Amount { get; init; }
 }
 
 public sealed class PaymentReceiptViewModel
@@ -354,6 +458,71 @@ public sealed class PaymentReceiptViewModel
     public BillingRuleInfo? BillingRule { get; init; }
     public decimal TotalPaid { get; init; }
     public string ReceiptNumber => $"OR-{Payment.Id:000000}";
+}
+
+public sealed class CustomerStatementViewModel
+{
+    public Client Client { get; init; } = new();
+    public SystemSettings Settings { get; init; } = new();
+    public string CompanyName { get; init; } = "";
+    public string CompanyAddress { get; init; } = "";
+    public string CompanyContact { get; init; } = "";
+    public DateOnly StatementDate { get; init; }
+    public string StatementNumber { get; init; } = "";
+    public string InvoiceNumber { get; init; } = "";
+    public string StatementTitle { get; init; } = "";
+    public string PlanLabel { get; init; } = "";
+    public decimal PlanAmount { get; init; }
+    public decimal PreviousBalance { get; init; }
+    public decimal Credits { get; init; }
+    public decimal NewCharges { get; init; }
+    public decimal TotalBalanceDue { get; init; }
+    public int OpenSupportTickets { get; init; }
+    public DateOnly PaymentDueDate { get; init; }
+    public IReadOnlyList<CustomerStatementPeriodRow> BillSummary { get; init; } = [];
+    public IReadOnlyList<CustomerStatementChargeRow> ChargeBreakdown { get; init; } = [];
+}
+
+public sealed class CustomerStatementPeriodRow
+{
+    public string Period { get; init; } = "";
+    public decimal Charges { get; init; }
+    public decimal Payments { get; init; }
+    public decimal Net { get; init; }
+}
+
+public sealed class CustomerStatementChargeRow
+{
+    public DateOnly Date { get; init; }
+    public string SalesInvoice { get; init; } = "";
+    public string Description { get; init; } = "";
+    public decimal Charge { get; init; }
+}
+
+public sealed class ThermalReceiptViewModel
+{
+    public Client Client { get; init; } = new();
+    public Payment? Payment { get; init; }
+    public SystemSettings Settings { get; init; } = new();
+    public string CompanyName { get; init; } = "";
+    public string CompanyAddress { get; init; } = "";
+    public string CompanyContact { get; init; } = "";
+    public DateOnly ReceiptDate { get; init; }
+    public DateOnly DateOfPayment { get; init; }
+    public DateOnly DueDate { get; init; }
+    public string OfficialReceiptNumber { get; init; } = "";
+    public string AccountLabel { get; init; } = "";
+    public string PlanLabel { get; init; } = "";
+    public decimal PlanAmount { get; init; }
+    public decimal PreviousBalance { get; init; }
+    public decimal Advance { get; init; }
+    public decimal PaymentAmount { get; init; }
+    public decimal PreviousPayment { get; init; }
+    public decimal BalanceAfterPayment { get; init; }
+    public decimal TotalCharge { get; init; }
+    public decimal TotalPaid { get; init; }
+    public decimal CurrentBalance { get; init; }
+    public decimal CurrentAdvance { get; init; }
 }
 
 public sealed class PppoeManagementViewModel

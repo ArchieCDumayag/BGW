@@ -1,0 +1,123 @@
+@model CustomerStatementViewModel
+@{
+    ViewData["Title"] = "Account Statement";
+    var client = Model.Client;
+    var logoUrl = Model.Settings.CompanyLogoUrl ?? "";
+}
+
+<style>
+    @@page {
+        size: A4;
+        margin: 12mm;
+    }
+</style>
+
+<div class="statement-shell">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 d-print-none">
+        <div>
+            <h1 class="page-title h3 mb-1">Account Statement</h1>
+            <p class="text-body-secondary mb-0">@Model.StatementNumber</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-secondary" asp-action="CustomerAccount" asp-route-id="@client.Id">
+                <i class="ti ti-arrow-left me-1"></i>Customer account
+            </a>
+            <button class="btn btn-outline-primary" type="button" onclick="window.print()">
+                <i class="ti ti-file-type-pdf me-1"></i>Save as PDF
+            </button>
+            <button class="btn btn-primary" type="button" onclick="window.print()">
+                <i class="ti ti-printer me-1"></i>Print
+            </button>
+        </div>
+    </div>
+
+    <div class="statement-paper card border-0 shadow-sm">
+        <div class="card-body p-4 p-md-5">
+            <div class="statement-header">
+                <div class="d-flex align-items-start gap-3">
+                    @if (!string.IsNullOrWhiteSpace(logoUrl))
+                    {
+                        <span class="statement-logo-frame">
+                            <img class="statement-logo-image" src="@logoUrl" alt="@Model.CompanyName logo" />
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="avatar avatar-xl bg-primary-lt text-primary fw-bold">3J</span>
+                    }
+                    <div>
+                        <div class="statement-company">@Model.CompanyName</div>
+                        <div class="text-secondary">@Model.CompanyAddress</div>
+                        <div class="text-secondary">@Model.CompanyContact</div>
+                    </div>
+                </div>
+                <div class="statement-meta">
+                    <div><span>Date</span><strong>@Model.StatementDate.ToString("MMM dd, yyyy")</strong></div>
+                    <div><span>Statement #</span><strong>@Model.StatementNumber</strong></div>
+                </div>
+            </div>
+
+            <div class="statement-title">Account Statement</div>
+
+            <div class="row g-4 mb-4">
+                <div class="col-md-7">
+                    <div class="statement-section-title">Bill To</div>
+                    <dl class="statement-details">
+                        <dt>Name</dt><dd>@client.Name</dd>
+                        <dt>Account No.</dt><dd>@(!string.IsNullOrWhiteSpace(client.AccountNumber) ? client.AccountNumber : "-")</dd>
+                        <dt>Service Address</dt><dd>@(!string.IsNullOrWhiteSpace(client.Address) ? client.Address : $"{client.Area} {client.Zone}")</dd>
+                        <dt>Contact No.</dt><dd>@(!string.IsNullOrWhiteSpace(client.Contact) ? client.Contact : "-")</dd>
+                        <dt>Email</dt><dd>@(!string.IsNullOrWhiteSpace(client.Email) ? client.Email : "-")</dd>
+                        <dt>Plan</dt><dd>@Model.PlanLabel</dd>
+                    </dl>
+                </div>
+                <div class="col-md-5">
+                    <div class="statement-total-box">
+                        <div class="text-secondary text-uppercase small">Total Balance Due</div>
+                        <div class="statement-total">PHP @Model.TotalBalanceDue.ToString("N0")</div>
+                        <div class="text-secondary">Due @Model.PaymentDueDate.ToString("MMM dd, yyyy")</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="statement-section-title">Account Summary</div>
+            <div class="table-responsive mb-4">
+                <table class="table table-sm statement-table">
+                    <tbody>
+                        <tr><th>Previous Balance</th><td class="text-end">PHP @Model.PreviousBalance.ToString("N0")</td></tr>
+                        <tr><th>Credits</th><td class="text-end">PHP @Model.Credits.ToString("N0")</td></tr>
+                        <tr><th>New Charges</th><td class="text-end">PHP @Model.NewCharges.ToString("N0")</td></tr>
+                        <tr><th>Total Balance Due</th><td class="text-end fw-bold">PHP @Model.TotalBalanceDue.ToString("N0")</td></tr>
+                        <tr><th>Open Support Tickets</th><td class="text-end">@Model.OpenSupportTickets</td></tr>
+                        <tr><th>Payment Due Date</th><td class="text-end">@Model.PaymentDueDate.ToString("MMM dd, yyyy")</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="statement-section-title">Bill Summary</div>
+            <div class="table-responsive">
+                <table class="table table-sm statement-table">
+                    <thead>
+                        <tr>
+                            <th>Period</th>
+                            <th class="text-end">Charges</th>
+                            <th class="text-end">Payments</th>
+                            <th class="text-end">Net</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Model.BillSummary)
+                        {
+                            <tr>
+                                <td>@item.Period</td>
+                                <td class="text-end">PHP @item.Charges.ToString("N0")</td>
+                                <td class="text-end">PHP @item.Payments.ToString("N0")</td>
+                                <td class="text-end fw-semibold">PHP @item.Net.ToString("N0")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

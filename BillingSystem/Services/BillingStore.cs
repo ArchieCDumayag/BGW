@@ -110,6 +110,8 @@ public sealed class JsonBillingStore(IWebHostEnvironment environment) : IBilling
         data.CoverageAreas ??= [];
         data.NapLocations ??= [];
         data.OltDevices ??= [];
+        data.OltPonPorts ??= [];
+        data.OltOnuClients ??= [];
         data.CollectorAssignments ??= [];
         data.Tickets ??= [];
         data.ActivityLogs ??= [];
@@ -165,6 +167,33 @@ public sealed class JsonBillingStore(IWebHostEnvironment environment) : IBilling
             olt.OltName ??= "";
             olt.Technology = string.IsNullOrWhiteSpace(olt.Technology) ? "Gpon" : olt.Technology;
             olt.Site ??= "";
+            olt.ManagementUrl ??= "";
+            olt.Username ??= "";
+            olt.Password ??= "";
+            olt.TotalPonPorts = Math.Max(0, olt.TotalPonPorts);
+        }
+
+        var oltTechnologyById = data.OltDevices.ToDictionary(olt => olt.Id, olt => olt.Technology);
+        foreach (var ponPort in data.OltPonPorts)
+        {
+            ponPort.PonPort ??= "";
+            ponPort.CustomerCapacity = oltTechnologyById.TryGetValue(ponPort.OltDeviceId, out var technology)
+                ? CustomerCapacityForTechnology(technology)
+                : Math.Max(0, ponPort.CustomerCapacity);
+            ponPort.TotalNap = Math.Max(0, ponPort.TotalNap);
+        }
+
+        foreach (var oltClient in data.OltOnuClients)
+        {
+            oltClient.OltName ??= "";
+            oltClient.PonPort ??= "";
+            oltClient.OnuId ??= "";
+            oltClient.Status ??= "";
+            oltClient.Description ??= "";
+            oltClient.Model ??= "";
+            oltClient.Profile ??= "";
+            oltClient.AuthMode ??= "";
+            oltClient.SerialNumber ??= "";
         }
 
         foreach (var assignment in data.CollectorAssignments)
@@ -233,5 +262,10 @@ public sealed class JsonBillingStore(IWebHostEnvironment environment) : IBilling
         client.Referral = string.IsNullOrWhiteSpace(client.Referral) ? "INQUIRE" : client.Referral;
         client.Address ??= "";
         client.Remarks ??= "";
+    }
+
+    private static int CustomerCapacityForTechnology(string? technology)
+    {
+        return (technology ?? "").Contains("epon", StringComparison.OrdinalIgnoreCase) ? 32 : 128;
     }
 }

@@ -18,6 +18,7 @@ public sealed class MikrotikRouterOsClient(string host, int port, string usernam
         var board = (await QueryAsync(stream, "/system/routerboard/print", [], cancellationToken)).FirstOrDefault() ?? [];
         var addresses = await QueryAsync(stream, "/ip/address/print", ["=.proplist=address,interface,disabled"], cancellationToken);
         var secrets = await QueryAsync(stream, "/ppp/secret/print", ["=.proplist=.id,name,profile,caller-id,remote-address,disabled,comment"], cancellationToken);
+        var profiles = await QueryOptionalAsync(stream, "/ppp/profile/print", ["=.proplist=.id,name,local-address,remote-address,rate-limit,only-one,dns-server,comment"], cancellationToken);
         var active = await QueryAsync(stream, "/ppp/active/print", ["=.proplist=name,address,caller-id,uptime,bytes-in,bytes-out"], cancellationToken);
 
         return new MikrotikSnapshot
@@ -31,6 +32,7 @@ public sealed class MikrotikRouterOsClient(string host, int port, string usernam
             FreeMemory = ToLong(Value(resource, "free-memory")),
             TotalMemory = ToLong(Value(resource, "total-memory")),
             Secrets = secrets.Select(ToSecret).Where(s => !string.IsNullOrWhiteSpace(s.Name)).ToList(),
+            Profiles = profiles.Select(ToProfile).Where(p => !string.IsNullOrWhiteSpace(p.Name)).ToList(),
             ActiveSessions = active.Select(ToActiveSession).Where(s => !string.IsNullOrWhiteSpace(s.Name)).ToList()
         };
     }
@@ -67,6 +69,7 @@ public sealed class MikrotikRouterOsClient(string host, int port, string usernam
         await WriteSentenceAsync(stream, [command, .. arguments], cancellationToken);
 
         var rows = new List<Dictionary<string, string>>();
+        string? trapMessage = null;
         while (true)
         {
             var sentence = await ReadSentenceAsync(stream, cancellationToken);
@@ -77,18 +80,40 @@ public sealed class MikrotikRouterOsClient(string host, int port, string usernam
 
             if (sentence[0] == "!done")
             {
+                if (!string.IsNullOrWhiteSpace(trapMessage))
+                {
+                    throw new InvalidOperationException(trapMessage);
+                }
+
                 return rows;
             }
 
             if (sentence[0] == "!trap")
             {
-                throw new InvalidOperationException(TrapMessage(sentence, $"MikroTik command failed: {command}"));
+                trapMessage = TrapMessage(sentence, $"MikroTik command failed: {command}");
+                continue;
             }
 
             if (sentence[0] == "!re")
             {
                 rows.Add(ParseAttributes(sentence));
             }
+        }
+    }
+
+    private static async Task<List<Dictionary<string, string>>> QueryOptionalAsync(
+        NetworkStream stream,
+        string command,
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await QueryAsync(stream, command, arguments, cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            return [];
         }
     }
 
@@ -116,6 +141,21 @@ public sealed class MikrotikRouterOsClient(string host, int port, string usernam
             Uptime = Value(row, "uptime"),
             BytesIn = ToLong(Value(row, "bytes-in")),
             BytesOut = ToLong(Value(row, "bytes-out"))
+        };
+    }
+
+    private static MikrotikPppoeProfile ToProfile(Dictionary<string, string> row)
+    {
+        return new MikrotikPppoeProfile
+        {
+            Id = Value(row, ".id"),
+            Name = Value(row, "name"),
+            LocalAddress = Value(row, "local-address"),
+            RemoteAddress = Value(row, "remote-address"),
+            RateLimit = Value(row, "rate-limit"),
+            OnlyOne = Value(row, "only-one"),
+            DnsServer = Value(row, "dns-server"),
+            Comment = Value(row, "comment")
         };
     }
 
@@ -314,6 +354,7 @@ public sealed class MikrotikSnapshot
     public long FreeMemory { get; set; }
     public long TotalMemory { get; set; }
     public IReadOnlyList<MikrotikPppoeSecret> Secrets { get; set; } = [];
+    public IReadOnlyList<MikrotikPppoeProfile> Profiles { get; set; } = [];
     public IReadOnlyList<MikrotikPppoeActiveSession> ActiveSessions { get; set; } = [];
 }
 
@@ -336,4 +377,16 @@ public sealed class MikrotikPppoeActiveSession
     public string Uptime { get; set; } = "";
     public long BytesIn { get; set; }
     public long BytesOut { get; set; }
+}
+
+public sealed class MikrotikPppoeProfile
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string LocalAddress { get; set; } = "";
+    public string RemoteAddress { get; set; } = "";
+    public string RateLimit { get; set; } = "";
+    public string OnlyOne { get; set; } = "";
+    public string DnsServer { get; set; } = "";
+    public string Comment { get; set; } = "";
 }

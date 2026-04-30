@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using BillingSystem.Models;
 using BillingSystem.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -9,9 +10,17 @@ using Microsoft.AspNetCore.Mvc;
 namespace BillingSystem.Controllers;
 
 [Authorize(Roles = "Admin")]
-public sealed class AdminController(IBillingStore store, IWebHostEnvironment environment, IAuditLogService auditLogger) : Controller
+public sealed class AdminController(
+    IBillingStore store,
+    IWebHostEnvironment environment,
+    IAuditLogService auditLogger,
+    IOltWebClient oltWebClient) : Controller
 {
     private const string ClearClientsConfirmation = "CLEAR ALL";
+    private const string StatementCompanyName = "3J COMPUTER AND INTERNET INSTALLATION SERVICES";
+    private const string StatementCompanyAddress = "Zone 7, Poblacion, Baggao, Cagayan";
+    private const string StatementCompanyContact = "0965-140-4623 FR****S VI*L D. / 0936-156-5251 AR***E D.";
+    private const string ThermalSupportContact = "09651404623 / 09361565251";
     private static readonly string[] AccountRoles = ["Admin", "User", "Technician", "Collector"];
 
     public async Task<IActionResult> Dashboard()
@@ -365,6 +374,45 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         return View(model);
     }
 
+    public async Task<IActionResult> AccountStatement(int id, int? year)
+    {
+        var data = await store.GetAsync();
+        var client = data.Clients.FirstOrDefault(c => c.Id == id);
+        if (client is null)
+        {
+            return NotFound();
+        }
+
+        var model = BuildCustomerStatementModel(data, client, "Account Statement", year, includeFullYear: true);
+        return View(model);
+    }
+
+    public async Task<IActionResult> BillingStatement(int id)
+    {
+        var data = await store.GetAsync();
+        var client = data.Clients.FirstOrDefault(c => c.Id == id);
+        if (client is null)
+        {
+            return NotFound();
+        }
+
+        var model = BuildCustomerStatementModel(data, client, "Billing Statement", null, includeFullYear: false);
+        return View(model);
+    }
+
+    public async Task<IActionResult> ThermalReceipt(int id)
+    {
+        var data = await store.GetAsync();
+        var client = data.Clients.FirstOrDefault(c => c.Id == id);
+        if (client is null)
+        {
+            return NotFound();
+        }
+
+        var model = BuildThermalReceiptModel(data, client);
+        return View(model);
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ChangeClientPlan(int id, decimal planAmount, string? effectiveMonth)
@@ -692,7 +740,7 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AddPayment(Payment payment)
+    public async Task<IActionResult> AddPayment(Payment payment, bool returnToCustomerAccount = false)
     {
         var data = await store.GetAsync();
         payment.Id = NextId(data.Payments.Select(p => p.Id));
@@ -710,6 +758,12 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         }
 
         await store.SaveAsync(data);
+        if (returnToCustomerAccount && client is not null)
+        {
+            TempData["CustomerAccountMessage"] = $"Payment recorded: PHP {payment.Amount:N0} for {client.Name}. Receipt OR-{payment.Id:000000}.";
+            return RedirectToAction(nameof(CustomerAccount), new { id = client.Id, year = payment.PaidOn.Year });
+        }
+
         return RedirectToAction(nameof(PaymentReceipt), new { id = payment.Id });
     }
 
@@ -787,8 +841,8 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     public async Task<IActionResult> Plans()
     {
         var data = await store.GetAsync();
-        ViewBag.Clients = data.Clients;
-        return View(data.Plans.OrderBy(p => p.Price).ThenBy(p => p.PlanName).ToList());
+        var model = await BuildPlansModel(data);
+        return View(model);
     }
 
     [HttpPost]
@@ -908,7 +962,7 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     public async Task<IActionResult> PonManagement()
     {
         var data = await store.GetAsync();
-        return View(data.OltDevices.OrderBy(o => o.Site).ThenBy(o => o.OltName).ToList());
+        return View(BuildPonManagementModel(data));
     }
 
     [HttpPost]
@@ -919,11 +973,16 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         olt.OltName = olt.OltName?.Trim() ?? "";
         olt.Technology = string.IsNullOrWhiteSpace(olt.Technology) ? "Gpon" : olt.Technology.Trim();
         olt.Site = olt.Site?.Trim() ?? "";
+        olt.ManagementUrl = NormalizeUrl(olt.ManagementUrl);
+        olt.Username = olt.Username?.Trim() ?? "";
+        olt.Password = olt.Password ?? "";
 
         if (olt.Id == 0)
         {
             olt.Id = NextId(data.OltDevices.Select(o => o.Id));
             data.OltDevices.Add(olt);
+            EnsureOltPonPorts(data, olt, olt.TotalPonPorts, []);
+            SetOltPonPortCapacities(data, olt);
         }
         else
         {
@@ -936,10 +995,107 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
             existing.OltName = olt.OltName;
             existing.Technology = olt.Technology;
             existing.Site = olt.Site;
+            existing.ManagementUrl = olt.ManagementUrl;
+            existing.Username = olt.Username;
+            existing.Password = string.IsNullOrWhiteSpace(olt.Password) ? existing.Password : olt.Password;
             existing.TotalPonPorts = olt.TotalPonPorts;
+            EnsureOltPonPorts(data, existing, existing.TotalPonPorts, []);
+            SetOltPonPortCapacities(data, existing);
         }
 
         await store.SaveAsync(data);
+        return RedirectToAction(nameof(PonManagement));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveOltPonPort(OltPonPort portRow)
+    {
+        var data = await store.GetAsync();
+        var olt = data.OltDevices.FirstOrDefault(o => o.Id == portRow.OltDeviceId);
+        if (olt is null)
+        {
+            return NotFound();
+        }
+
+        portRow.PonPort = NormalizePonPortLabel(portRow.PonPort);
+        portRow.CustomerCapacity = CustomerCapacityForTechnology(olt.Technology);
+        portRow.TotalNap = Math.Max(0, portRow.TotalNap);
+
+        if (string.IsNullOrWhiteSpace(portRow.PonPort))
+        {
+            portRow.PonPort = $"PON{Math.Max(1, data.OltPonPorts.Count(p => p.OltDeviceId == portRow.OltDeviceId) + 1)}";
+        }
+
+        var existing = portRow.Id == 0
+            ? data.OltPonPorts.FirstOrDefault(p => p.OltDeviceId == portRow.OltDeviceId
+                && NormalizePonPortLabel(p.PonPort).Equals(portRow.PonPort, StringComparison.OrdinalIgnoreCase))
+            : data.OltPonPorts.FirstOrDefault(p => p.Id == portRow.Id);
+
+        if (existing is null)
+        {
+            portRow.Id = NextId(data.OltPonPorts.Select(p => p.Id));
+            data.OltPonPorts.Add(portRow);
+        }
+        else
+        {
+            existing.OltDeviceId = olt.Id;
+            existing.PonPort = portRow.PonPort;
+            existing.CustomerCapacity = portRow.CustomerCapacity;
+            existing.TotalNap = portRow.TotalNap;
+        }
+
+        await store.SaveAsync(data);
+        TempData["PonSuccess"] = $"{olt.OltName} {portRow.PonPort} capacity updated.";
+        return RedirectToAction(nameof(PonManagement));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SyncOltClients()
+    {
+        var data = await store.GetAsync();
+        var syncedAt = DateTime.Now;
+        var addedClients = 0;
+        var failedMessages = new List<string>();
+
+        foreach (var olt in data.OltDevices.Where(o => !string.IsNullOrWhiteSpace(o.ManagementUrl)))
+        {
+            var result = await oltWebClient.GetOnuClientsAsync(olt, HttpContext.RequestAborted);
+            if (!result.IsSuccess)
+            {
+                failedMessages.Add($"{olt.OltName}: {result.ErrorMessage}");
+                continue;
+            }
+
+            data.OltOnuClients.RemoveAll(c => c.OltDeviceId == olt.Id);
+            foreach (var client in result.Clients)
+            {
+                client.Id = NextId(data.OltOnuClients.Select(c => c.Id));
+                client.SyncedAt = syncedAt;
+                data.OltOnuClients.Add(client);
+            }
+
+            if (result.PonPortCount > 0)
+            {
+                olt.TotalPonPorts = result.PonPortCount;
+            }
+
+            EnsureOltPonPorts(data, olt, result.PonPortCount, result.Clients.Select(c => c.PonPort));
+            addedClients += result.Clients.Count;
+        }
+
+        await store.SaveAsync(data);
+
+        if (failedMessages.Count == 0)
+        {
+            TempData["PonSuccess"] = $"OLT clients synced. {addedClients:N0} ONU records loaded.";
+        }
+        else
+        {
+            TempData["PonError"] = $"Synced {addedClients:N0} ONU records. Failed: {string.Join("; ", failedMessages)}";
+        }
+
         return RedirectToAction(nameof(PonManagement));
     }
 
@@ -949,6 +1105,18 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
     {
         var data = await store.GetAsync();
         data.OltDevices.RemoveAll(o => o.Id == id);
+        data.OltPonPorts.RemoveAll(p => p.OltDeviceId == id);
+        data.OltOnuClients.RemoveAll(c => c.OltDeviceId == id);
+        await store.SaveAsync(data);
+        return RedirectToAction(nameof(PonManagement));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteOltPonPort(int id)
+    {
+        var data = await store.GetAsync();
+        data.OltPonPorts.RemoveAll(p => p.Id == id);
         await store.SaveAsync(data);
         return RedirectToAction(nameof(PonManagement));
     }
@@ -1389,6 +1557,209 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         return technicianId is > 0 ? technicianId : null;
     }
 
+    private static async Task<PlansPageViewModel> BuildPlansModel(BillingData data)
+    {
+        var localPlans = data.Plans
+            .OrderBy(p => p.Price)
+            .ThenBy(p => p.PlanName)
+            .ToList();
+        var profiles = new List<MikrotikPlanProfileViewModel>();
+        var settings = data.Settings;
+        var isConnected = false;
+        var connectionMessage = "";
+
+        if (string.IsNullOrWhiteSpace(settings.MikrotikHost)
+            || string.IsNullOrWhiteSpace(settings.MikrotikApiUser)
+            || string.IsNullOrWhiteSpace(settings.MikrotikApiPassword))
+        {
+            connectionMessage = "MikroTik settings are incomplete.";
+        }
+        else
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                var client = new MikrotikRouterOsClient(
+                    settings.MikrotikHost,
+                    settings.MikrotikApiPort <= 0 ? 8728 : settings.MikrotikApiPort,
+                    settings.MikrotikApiUser,
+                    settings.MikrotikApiPassword);
+                var snapshot = await client.GetSnapshotAsync(timeout.Token);
+                profiles = BuildMikrotikPlanProfiles(snapshot);
+                isConnected = true;
+                connectionMessage = "Connected to MikroTik";
+            }
+            catch (Exception ex)
+            {
+                connectionMessage = $"MikroTik connection failed: {ex.Message}";
+            }
+        }
+
+        var matchedProfileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var planRows = localPlans
+            .Select(plan =>
+            {
+                var profile = profiles.FirstOrDefault(p => PlanMatchesProfile(plan, p.Name));
+                if (profile is not null)
+                {
+                    matchedProfileNames.Add(profile.Name);
+                }
+
+                return new PlanWithCountsViewModel
+                {
+                    Plan = plan,
+                    LocalClientCount = data.Clients.Count(c =>
+                        c.PlanAmount == plan.Price
+                        && (c.BillingType ?? "").Equals(plan.Type, StringComparison.OrdinalIgnoreCase)),
+                    MikrotikUserCount = profile?.TotalUsers ?? 0,
+                    MikrotikProfile = profile
+                };
+            })
+            .ToList();
+
+        return new PlansPageViewModel
+        {
+            Plans = planRows,
+            MikrotikProfiles = profiles
+                .Select(profile => CopyMikrotikProfile(profile, matchedProfileNames.Contains(profile.Name)))
+                .ToList(),
+            IsMikrotikConnected = isConnected,
+            MikrotikConnectionMessage = connectionMessage,
+            RouterHost = settings.MikrotikHost,
+            TotalLocalClients = data.Clients.Count,
+            TotalMikrotikUsers = profiles.Sum(profile => profile.TotalUsers)
+        };
+    }
+
+    private static List<MikrotikPlanProfileViewModel> BuildMikrotikPlanProfiles(MikrotikSnapshot snapshot)
+    {
+        var activeUsernames = snapshot.ActiveSessions
+            .Where(session => !string.IsNullOrWhiteSpace(session.Name))
+            .Select(session => session.Name.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var profilesByName = snapshot.Profiles
+            .Where(profile => !string.IsNullOrWhiteSpace(profile.Name))
+            .GroupBy(profile => profile.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var secretsByProfile = snapshot.Secrets
+            .Where(secret => !string.IsNullOrWhiteSpace(secret.Profile))
+            .GroupBy(secret => secret.Profile.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        return profilesByName.Keys
+            .Concat(secretsByProfile.Keys)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name)
+            .Select(name =>
+            {
+                profilesByName.TryGetValue(name, out var profile);
+                secretsByProfile.TryGetValue(name, out var secrets);
+                secrets ??= [];
+
+                var disabledUsers = secrets.Count(secret => secret.Disabled);
+                var onlineUsers = secrets.Count(secret => !secret.Disabled && activeUsernames.Contains(secret.Name));
+
+                return new MikrotikPlanProfileViewModel
+                {
+                    Name = name,
+                    RateLimit = profile?.RateLimit ?? "",
+                    LocalAddress = profile?.LocalAddress ?? "",
+                    RemoteAddress = profile?.RemoteAddress ?? "",
+                    DnsServer = profile?.DnsServer ?? "",
+                    OnlyOne = profile?.OnlyOne ?? "",
+                    Comment = profile?.Comment ?? "",
+                    TotalUsers = secrets.Count,
+                    OnlineUsers = onlineUsers,
+                    DisabledUsers = disabledUsers,
+                    OfflineUsers = Math.Max(0, secrets.Count - onlineUsers - disabledUsers)
+                };
+            })
+            .ToList();
+    }
+
+    private static MikrotikPlanProfileViewModel CopyMikrotikProfile(MikrotikPlanProfileViewModel profile, bool isMatched)
+    {
+        return new MikrotikPlanProfileViewModel
+        {
+            Name = profile.Name,
+            RateLimit = profile.RateLimit,
+            LocalAddress = profile.LocalAddress,
+            RemoteAddress = profile.RemoteAddress,
+            DnsServer = profile.DnsServer,
+            OnlyOne = profile.OnlyOne,
+            Comment = profile.Comment,
+            TotalUsers = profile.TotalUsers,
+            OnlineUsers = profile.OnlineUsers,
+            OfflineUsers = profile.OfflineUsers,
+            DisabledUsers = profile.DisabledUsers,
+            IsMatchedToLocalPlan = isMatched
+        };
+    }
+
+    private static bool PlanMatchesProfile(ServicePlan plan, string profileName)
+    {
+        if (string.IsNullOrWhiteSpace(profileName))
+        {
+            return false;
+        }
+
+        var planKey = NormalizePlanKey(plan.PlanName);
+        var profileKey = NormalizePlanKey(profileName);
+        if (planKey.Length >= 3 && profileKey.Length >= 3
+            && (planKey.Equals(profileKey, StringComparison.OrdinalIgnoreCase)
+                || planKey.Contains(profileKey, StringComparison.OrdinalIgnoreCase)
+                || profileKey.Contains(planKey, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return ProfileHasPriceToken(profileName, plan.Price);
+    }
+
+    private static string NormalizePlanKey(string value)
+    {
+        return new string((value ?? "")
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray());
+    }
+
+    private static bool ProfileHasPriceToken(string profileName, decimal price)
+    {
+        if (price <= 0)
+        {
+            return false;
+        }
+
+        foreach (Match match in Regex.Matches(profileName, @"\d+(?:[\.,]\d+)?"))
+        {
+            if (decimal.TryParse(
+                    match.Value.Replace(',', '.'),
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out var value)
+                && Math.Abs(value - price) < 0.01m)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeUrl(string? url)
+    {
+        var value = url?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(value)
+            || value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return value;
+        }
+
+        return $"https://{value}";
+    }
+
     private static async Task<PppoeManagementViewModel> BuildPppoeModel(
         BillingData data,
         string? q,
@@ -1650,6 +2021,260 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "";
     }
 
+    private static PonManagementViewModel BuildPonManagementModel(BillingData data)
+    {
+        var oltDevices = data.OltDevices
+            .OrderBy(o => o.Site)
+            .ThenBy(o => o.OltName)
+            .ToList();
+        var oltById = oltDevices.ToDictionary(o => o.Id);
+        var clients = data.OltOnuClients.ToList();
+        var ponPorts = BuildEffectiveOltPonPorts(data, oltDevices);
+
+        var ponRows = ponPorts
+            .Where(ponPort => oltById.ContainsKey(ponPort.OltDeviceId))
+            .Select(ponPort =>
+            {
+                var olt = oltById[ponPort.OltDeviceId];
+                var portClients = clients
+                    .Where(client => client.OltDeviceId == ponPort.OltDeviceId
+                        && SamePonPort(client.PonPort, ponPort.PonPort))
+                    .ToList();
+                var usedPorts = CountDistinctOnus(portClients);
+                var displayPonPort = WithTechnologyCustomerCapacity(ponPort, olt.Technology);
+                var totalCapacity = displayPonPort.CustomerCapacity;
+
+                return new OltPonMonitoringRowViewModel
+                {
+                    Olt = olt,
+                    PonPort = displayPonPort,
+                    TotalCapacity = totalCapacity,
+                    UsedPorts = usedPorts,
+                    AssignedCustomers = CountAssignedCustomers(portClients),
+                    PonUsagePercent = UsagePercent(usedPorts, totalCapacity)
+                };
+            })
+            .OrderBy(row => row.Olt.Site)
+            .ThenBy(row => row.Olt.OltName)
+            .ThenBy(row => PonSortKey(row.PonPort.PonPort))
+            .ThenBy(row => row.PonPort.PonPort)
+            .ToList();
+
+        var oltRows = oltDevices
+            .Select(olt =>
+            {
+                var rows = ponRows.Where(row => row.Olt.Id == olt.Id).ToList();
+                var totalCapacity = rows.Sum(row => row.TotalCapacity);
+                var usedPorts = rows.Sum(row => row.UsedPorts);
+
+                return new OltMonitoringRowViewModel
+                {
+                    Olt = olt,
+                    TotalCapacity = totalCapacity,
+                    UsedPorts = usedPorts,
+                    AssignedCustomers = rows.Sum(row => row.AssignedCustomers),
+                    PonUsagePercent = UsagePercent(usedPorts, totalCapacity)
+                };
+            })
+            .ToList();
+
+        var overallCapacity = ponRows.Sum(row => row.TotalCapacity);
+        var overallUsed = ponRows.Sum(row => row.UsedPorts);
+
+        return new PonManagementViewModel
+        {
+            OltDevices = oltDevices,
+            OltRows = oltRows,
+            PonRows = ponRows,
+            LastSyncedAt = clients.Count == 0 ? null : clients.Max(c => c.SyncedAt),
+            TotalPonPorts = ponRows.Count,
+            TotalCapacity = overallCapacity,
+            UsedPorts = overallUsed,
+            AssignedCustomers = ponRows.Sum(row => row.AssignedCustomers),
+            PonUsagePercent = UsagePercent(overallUsed, overallCapacity)
+        };
+    }
+
+    private static List<OltPonPort> BuildEffectiveOltPonPorts(BillingData data, IReadOnlyList<OltDevice> oltDevices)
+    {
+        var rows = new List<OltPonPort>();
+
+        foreach (var olt in oltDevices)
+        {
+            var configuredRows = data.OltPonPorts
+                .Where(ponPort => ponPort.OltDeviceId == olt.Id)
+                .GroupBy(ponPort => NormalizePonPortLabel(ponPort.PonPort), StringComparer.OrdinalIgnoreCase)
+                .Where(group => !string.IsNullOrWhiteSpace(group.Key))
+                .Select(group =>
+                {
+                    var ponPort = group.First();
+                    return new OltPonPort
+                    {
+                        Id = ponPort.Id,
+                        OltDeviceId = olt.Id,
+                        PonPort = group.Key,
+                        CustomerCapacity = CustomerCapacityForTechnology(olt.Technology),
+                        TotalNap = ponPort.TotalNap
+                    };
+                })
+                .ToList();
+
+            rows.AddRange(configuredRows);
+            var configuredLabels = configuredRows
+                .Select(row => row.PonPort)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var discoveredLabels = data.OltOnuClients
+                .Where(client => client.OltDeviceId == olt.Id)
+                .Select(client => NormalizePonPortLabel(client.PonPort))
+                .Where(label => !string.IsNullOrWhiteSpace(label))
+                .Concat(Enumerable.Range(1, Math.Min(Math.Max(olt.TotalPonPorts, 0), 128)).Select(port => $"PON{port}"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(PonSortKey)
+                .ThenBy(label => label);
+
+            foreach (var label in discoveredLabels)
+            {
+                if (configuredLabels.Contains(label))
+                {
+                    continue;
+                }
+
+                rows.Add(new OltPonPort
+                {
+                    OltDeviceId = olt.Id,
+                    PonPort = label,
+                    CustomerCapacity = CustomerCapacityForTechnology(olt.Technology),
+                    TotalNap = 0
+                });
+            }
+        }
+
+        return rows;
+    }
+
+    private static void EnsureOltPonPorts(BillingData data, OltDevice olt, int ponPortCount, IEnumerable<string> discoveredPorts)
+    {
+        var labels = discoveredPorts
+            .Select(NormalizePonPortLabel)
+            .Where(label => !string.IsNullOrWhiteSpace(label))
+            .Concat(Enumerable.Range(1, Math.Min(Math.Max(ponPortCount, 0), 128)).Select(port => $"PON{port}"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(PonSortKey)
+            .ThenBy(label => label)
+            .ToList();
+
+        foreach (var label in labels)
+        {
+            var existing = data.OltPonPorts.FirstOrDefault(ponPort => ponPort.OltDeviceId == olt.Id
+                && NormalizePonPortLabel(ponPort.PonPort).Equals(label, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null)
+            {
+                existing.CustomerCapacity = CustomerCapacityForTechnology(olt.Technology);
+                continue;
+            }
+
+            data.OltPonPorts.Add(new OltPonPort
+            {
+                Id = NextId(data.OltPonPorts.Select(ponPort => ponPort.Id)),
+                OltDeviceId = olt.Id,
+                PonPort = label,
+                CustomerCapacity = CustomerCapacityForTechnology(olt.Technology),
+                TotalNap = 0
+            });
+        }
+
+        if (labels.Count > olt.TotalPonPorts)
+        {
+            olt.TotalPonPorts = labels.Count;
+        }
+    }
+
+    private static int CountDistinctOnus(IEnumerable<OltOnuClient> clients)
+    {
+        return clients
+            .Select(client => FirstNonEmpty(client.OnuId, client.SerialNumber, client.Description))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+    }
+
+    private static int CountAssignedCustomers(IEnumerable<OltOnuClient> clients)
+    {
+        return clients.Count(client => !string.IsNullOrWhiteSpace(FirstNonEmpty(client.OnuId, client.SerialNumber, client.Description)));
+    }
+
+    private static OltPonPort WithTechnologyCustomerCapacity(OltPonPort ponPort, string technology)
+    {
+        return new OltPonPort
+        {
+            Id = ponPort.Id,
+            OltDeviceId = ponPort.OltDeviceId,
+            PonPort = ponPort.PonPort,
+            CustomerCapacity = CustomerCapacityForTechnology(technology),
+            TotalNap = Math.Max(0, ponPort.TotalNap)
+        };
+    }
+
+    private static void SetOltPonPortCapacities(BillingData data, OltDevice olt)
+    {
+        var customerCapacity = CustomerCapacityForTechnology(olt.Technology);
+        foreach (var ponPort in data.OltPonPorts.Where(ponPort => ponPort.OltDeviceId == olt.Id))
+        {
+            ponPort.CustomerCapacity = customerCapacity;
+        }
+    }
+
+    private static int CustomerCapacityForTechnology(string? technology)
+    {
+        return (technology ?? "").Contains("epon", StringComparison.OrdinalIgnoreCase) ? 32 : 128;
+    }
+
+    private static decimal UsagePercent(int usedPorts, int totalCapacity)
+    {
+        return totalCapacity <= 0
+            ? 0
+            : Math.Round((decimal)usedPorts / totalCapacity * 100, 1, MidpointRounding.AwayFromZero);
+    }
+
+    private static bool SamePonPort(string left, string right)
+    {
+        return NormalizePonPortLabel(left).Equals(NormalizePonPortLabel(right), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int PonSortKey(string value)
+    {
+        var match = Regex.Match(value ?? "", @"\d+");
+        return match.Success && int.TryParse(match.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port)
+            ? port
+            : int.MaxValue;
+    }
+
+    private static string NormalizePonPortLabel(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        var trimmed = value.Trim();
+        var gponMatch = Regex.Match(trimmed, @"GPON\d+/(?<port>\d+):", RegexOptions.IgnoreCase);
+        if (gponMatch.Success)
+        {
+            return $"PON{gponMatch.Groups["port"].Value}";
+        }
+
+        var ponMatch = Regex.Match(trimmed, @"PON\s*(?<port>\d+)", RegexOptions.IgnoreCase);
+        if (ponMatch.Success)
+        {
+            return $"PON{ponMatch.Groups["port"].Value}";
+        }
+
+        return int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port)
+            ? $"PON{port}"
+            : trimmed.ToUpperInvariant().Replace(" ", "");
+    }
+
     private static int NextId(IEnumerable<int> ids) => ids.DefaultIfEmpty().Max() + 1;
 
     private static string NextAccountNumber(IEnumerable<Client> clients)
@@ -1873,6 +2498,187 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
         return digitSum % 9 + 1;
     }
 
+    private static CustomerStatementViewModel BuildCustomerStatementModel(
+        BillingData data,
+        Client client,
+        string statementTitle,
+        int? year,
+        bool includeFullYear)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var currentMonth = new DateOnly(today.Year, today.Month, 1);
+        var payments = data.Payments
+            .Where(payment => payment.ClientId == client.Id)
+            .OrderByDescending(payment => payment.PaidOn)
+            .ThenByDescending(payment => payment.Id)
+            .ToList();
+        var planChanges = data.PlanChanges
+            .Where(change => change.ClientId == client.Id)
+            .OrderByDescending(change => change.EffectiveMonth)
+            .ThenByDescending(change => change.Id)
+            .ToList();
+        var monthlyBillOverrides = data.MonthlyBillOverrides
+            .Where(overrideBill => overrideBill.ClientId == client.Id)
+            .OrderByDescending(overrideBill => overrideBill.BillingMonth)
+            .ThenByDescending(overrideBill => overrideBill.Id)
+            .ToList();
+        var billingMonths = BuildCustomerBillingMonths(client, payments, planChanges, monthlyBillOverrides);
+        var currentBillingMonth = billingMonths.FirstOrDefault(month => month.Month == currentMonth)
+            ?? billingMonths.OrderByDescending(month => month.Month).FirstOrDefault()
+            ?? new CustomerBillingMonth
+            {
+                Month = currentMonth,
+                MonthLabel = currentMonth.ToString("MMMM yyyy", CultureInfo.InvariantCulture),
+                DueDate = BillingRules.ForClient(client, today).NextDueDate,
+                BillAmount = client.Bills,
+                Balance = client.Balance
+            };
+        var selectedYear = includeFullYear
+            ? year is int requestedYear ? requestedYear : today.Year
+            : today.Year;
+        var summaryMonths = includeFullYear
+            ? billingMonths.Where(month => month.Month.Year == selectedYear).OrderBy(month => month.Month).ToList()
+            : billingMonths.Where(month => month.Month == currentBillingMonth.Month).OrderBy(month => month.Month).ToList();
+
+        if (summaryMonths.Count == 0)
+        {
+            summaryMonths.Add(currentBillingMonth);
+        }
+
+        var monthPayments = payments
+            .Where(payment => payment.PaidOn.Year == currentBillingMonth.Month.Year && payment.PaidOn.Month == currentBillingMonth.Month.Month)
+            .ToList();
+        var planAmount = MonthlyPlanAmount(client, currentBillingMonth.Month, monthPayments, planChanges);
+        var newCharges = StatementNewCharges(currentBillingMonth);
+        if (newCharges <= 0 && currentBillingMonth.BillAmount > 0)
+        {
+            newCharges = currentBillingMonth.BillAmount;
+        }
+
+        var totalBalanceDue = Math.Max(
+            0,
+            currentBillingMonth.Balance - currentBillingMonth.Advance + newCharges - currentBillingMonth.AmountPaid);
+        var accountKey = StatementAccountKey(client);
+        var invoiceNumber = $"INV-{accountKey}-{currentBillingMonth.Month:yyyyMM}";
+
+        return new CustomerStatementViewModel
+        {
+            Client = client,
+            Settings = data.Settings,
+            CompanyName = StatementCompanyName,
+            CompanyAddress = StatementCompanyAddress,
+            CompanyContact = StatementCompanyContact,
+            StatementDate = today,
+            StatementNumber = $"ST-{accountKey}-{today:yyyyMMdd}",
+            InvoiceNumber = invoiceNumber,
+            StatementTitle = statementTitle,
+            PlanLabel = $"{client.BillingType} - PHP {planAmount:N0}",
+            PlanAmount = planAmount,
+            PreviousBalance = currentBillingMonth.Balance,
+            Credits = currentBillingMonth.AmountPaid,
+            NewCharges = newCharges,
+            TotalBalanceDue = totalBalanceDue,
+            OpenSupportTickets = data.Tickets.Count(ticket => ticket.ClientId == client.Id && IsOpenTicket(ticket)),
+            PaymentDueDate = currentBillingMonth.DueDate,
+            BillSummary = summaryMonths
+                .Select(month => new CustomerStatementPeriodRow
+                {
+                    Period = month.MonthLabel,
+                    Charges = month.BillAmount,
+                    Payments = month.AmountPaid,
+                    Net = Math.Max(0, month.BillAmount - month.AmountPaid)
+                })
+                .ToList(),
+            ChargeBreakdown = includeFullYear
+                ? []
+                : [new CustomerStatementChargeRow
+                {
+                    Date = currentBillingMonth.Month,
+                    SalesInvoice = invoiceNumber,
+                    Description = $"{client.BillingType} internet service - {currentBillingMonth.MonthLabel}",
+                    Charge = newCharges
+                }]
+        };
+    }
+
+    private static ThermalReceiptViewModel BuildThermalReceiptModel(BillingData data, Client client)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var payments = data.Payments
+            .Where(payment => payment.ClientId == client.Id)
+            .OrderByDescending(payment => payment.PaidOn)
+            .ThenByDescending(payment => payment.Id)
+            .ToList();
+        var latestPayment = payments.FirstOrDefault();
+        var receiptDate = latestPayment?.PaidOn ?? today;
+        var paymentMonth = new DateOnly(receiptDate.Year, receiptDate.Month, 1);
+        var monthPayments = payments
+            .Where(payment => payment.PaidOn.Year == receiptDate.Year && payment.PaidOn.Month == receiptDate.Month)
+            .OrderBy(payment => payment.PaidOn)
+            .ThenBy(payment => payment.Id)
+            .ToList();
+        var planChanges = data.PlanChanges.Where(change => change.ClientId == client.Id).ToList();
+        var monthlyBillOverrides = data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id).ToList();
+        var billingMonth = BuildCustomerBillingMonths(client, payments, planChanges, monthlyBillOverrides)
+            .FirstOrDefault(month => month.Month == paymentMonth);
+        var planAmount = MonthlyPlanAmount(client, paymentMonth, monthPayments, planChanges);
+        var previousBalance = billingMonth?.Balance ?? client.Balance;
+        var advance = billingMonth?.Advance ?? client.Advance;
+        var paymentAmount = latestPayment?.Amount ?? 0;
+        var totalCharge = billingMonth?.BillAmount ?? Math.Max(0, previousBalance - advance + planAmount);
+        var totalPaid = monthPayments.Sum(payment => payment.Amount);
+
+        return new ThermalReceiptViewModel
+        {
+            Client = client,
+            Payment = latestPayment,
+            Settings = data.Settings,
+            CompanyName = StatementCompanyName,
+            CompanyAddress = StatementCompanyAddress,
+            CompanyContact = ThermalSupportContact,
+            ReceiptDate = today,
+            DateOfPayment = receiptDate,
+            DueDate = billingMonth?.DueDate ?? DueDateForBillingMonth(client, paymentMonth),
+            OfficialReceiptNumber = latestPayment is null ? "-" : $"OR-{latestPayment.Id:000000}",
+            AccountLabel = string.IsNullOrWhiteSpace(client.AccountNumber) ? $"Client #{client.Id}" : client.AccountNumber,
+            PlanLabel = client.BillingType,
+            PlanAmount = planAmount,
+            PreviousBalance = previousBalance,
+            Advance = advance,
+            PaymentAmount = paymentAmount,
+            PreviousPayment = paymentAmount,
+            BalanceAfterPayment = Math.Max(0, previousBalance - paymentAmount),
+            TotalCharge = totalCharge,
+            TotalPaid = totalPaid,
+            CurrentBalance = Math.Max(0, totalCharge - totalPaid),
+            CurrentAdvance = Math.Max(0, totalPaid - totalCharge)
+        };
+    }
+
+    private static decimal StatementNewCharges(CustomerBillingMonth billingMonth)
+    {
+        return Math.Max(0, billingMonth.BillAmount - billingMonth.Balance + billingMonth.Advance);
+    }
+
+    private static bool IsOpenTicket(SupportTicket ticket)
+    {
+        var status = ticket.Status ?? "";
+        return !status.Equals("Closed", StringComparison.OrdinalIgnoreCase)
+            && !status.Equals("Done", StringComparison.OrdinalIgnoreCase)
+            && !status.Equals("Resolved", StringComparison.OrdinalIgnoreCase)
+            && !status.Equals("Cancelled", StringComparison.OrdinalIgnoreCase)
+            && !status.Equals("Canceled", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string StatementAccountKey(Client client)
+    {
+        var value = string.IsNullOrWhiteSpace(client.AccountNumber)
+            ? client.Id.ToString(CultureInfo.InvariantCulture)
+            : client.AccountNumber;
+
+        return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+    }
+
     private static IReadOnlyList<CustomerBillingMonth> BuildCustomerBillingMonths(
         Client client,
         IReadOnlyList<Payment> payments,
@@ -1919,6 +2725,13 @@ public sealed class AdminController(IBillingStore store, IWebHostEnvironment env
                 DiscountAmount = billOverride?.DiscountAmount ?? 0,
                 DiscountNote = billOverride?.DiscountRemarks ?? "",
                 Status = status,
+                PaymentBreakdown = monthPayments
+                    .Select(p => new CustomerBillingPaymentBreakdown
+                    {
+                        PaidOn = p.PaidOn,
+                        Amount = p.Amount
+                    })
+                    .ToList(),
                 PaymentDates = monthPayments.Count == 0 ? "-" : string.Join(", ", monthPayments.Select(p => p.PaidOn.ToString("MMM dd, yyyy", CultureInfo.InvariantCulture))),
                 Methods = JoinDistinct(monthPayments.Select(p => NormalizePaymentMethod(p.Method))),
                 References = JoinDistinct(monthPayments.Select(p => p.ReferenceNumber)),

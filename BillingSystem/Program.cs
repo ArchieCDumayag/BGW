@@ -10,6 +10,7 @@ builder.Services.AddControllersWithViews(options =>
 builder.Services.AddSingleton<BillingSystem.Services.IBillingStore, BillingSystem.Services.JsonBillingStore>();
 builder.Services.AddScoped<BillingSystem.Services.IAuthService, BillingSystem.Services.AuthService>();
 builder.Services.AddScoped<BillingSystem.Services.IAuditLogService, BillingSystem.Services.AuditLogService>();
+builder.Services.AddScoped<BillingSystem.Services.IOltWebClient, BillingSystem.Services.OltWebClient>();
 builder.Services.AddScoped<BillingSystem.Services.AuditLogActionFilter>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

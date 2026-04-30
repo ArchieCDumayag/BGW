@@ -1,16 +1,18 @@
 @model SystemSettings
 @{
-    ViewData["Title"] = "Settings & Integrations";
+    ViewData["Title"] = "Settings";
     var users = ViewBag.Users as IReadOnlyList<UserAccount> ?? Array.Empty<UserAccount>();
     var displayName = string.IsNullOrWhiteSpace(Model.SystemDisplayName) ? Model.CompanyName : Model.SystemDisplayName;
 }
+
+<form id="settingsForm" asp-action="SettingsIntegrations" method="post" enctype="multipart/form-data"></form>
 
 <div class="page-header d-print-none mb-3">
     <div class="row g-2 align-items-center">
         <div class="col">
             <div class="page-pretitle">Admin</div>
-            <h1 class="page-title">Settings &amp; Integrations</h1>
-            <div class="text-secondary mt-1">Branding, accounts, integrations, and database maintenance.</div>
+            <h1 class="page-title">Settings</h1>
+            <div class="text-secondary mt-1">Branding, integrations, payment, and database maintenance.</div>
         </div>
         <div class="col-auto ms-auto d-print-none">
             <a class="btn btn-outline-primary" asp-action="Users">
@@ -64,104 +66,183 @@
     </div>
 </div>
 
-<div class="card mb-3">
-    <div class="card-header">
-        <h2 class="card-title mb-0">System Branding</h2>
-    </div>
-    <div class="card-body">
-        <form asp-action="SettingsIntegrations" method="post" enctype="multipart/form-data" class="row g-3">
-            <input type="hidden" asp-for="CompanyLogoUrl" />
-            <input type="hidden" asp-for="BrowserLogoUrl" />
-
-            <div class="col-lg-4">
-                <label class="form-label required">System Display Name</label>
-                <input class="form-control" asp-for="SystemDisplayName" placeholder="3JBGW Billing" required />
-            </div>
-            <div class="col-lg-4">
-                <label class="form-label required">Company Name</label>
-                <input class="form-control" asp-for="CompanyName" required />
-            </div>
-            <div class="col-lg-2">
-                <label class="form-label">Monthly Due Day</label>
-                <input class="form-control" asp-for="MonthlyDueDay" type="number" min="1" max="31" />
-            </div>
-            <div class="col-lg-2">
-                <label class="form-label">Currency</label>
-                <input class="form-control" asp-for="Currency" />
-            </div>
-
-            <div class="col-lg-6">
-                <label class="form-label">Company Logo</label>
-                <input class="form-control" type="file" name="companyLogoFile" accept="image/*,.ico,.svg" />
-                @if (!string.IsNullOrWhiteSpace(Model.CompanyLogoUrl))
-                {
-                    <div class="mt-2 d-flex align-items-center gap-2">
-                        <span class="avatar avatar-md bg-white border" style="background-image: url('@Model.CompanyLogoUrl')"></span>
-                        <span class="text-secondary">@Model.CompanyLogoUrl</span>
-                    </div>
-                }
-            </div>
-            <div class="col-lg-6">
-                <label class="form-label">Browser Page Logo</label>
-                <input class="form-control" type="file" name="browserLogoFile" accept="image/*,.ico,.svg" />
-                @if (!string.IsNullOrWhiteSpace(Model.BrowserLogoUrl))
-                {
-                    <div class="mt-2 d-flex align-items-center gap-2">
-                        <img src="@Model.BrowserLogoUrl" alt="Browser logo" width="32" height="32" class="border rounded" />
-                        <span class="text-secondary">@Model.BrowserLogoUrl</span>
-                    </div>
-                }
-            </div>
-
-            <div class="col-12"><hr class="my-2" /></div>
-            <div class="col-md-6"><label class="form-label">Semaphore API Key</label><input class="form-control" asp-for="SemaphoreApiKey" /></div>
-            <div class="col-md-6"><label class="form-label">Semaphore Sender Name</label><input class="form-control" asp-for="SemaphoreSenderName" /></div>
-            <div class="col-12"><label class="form-label">SMS reminder template</label><textarea class="form-control" asp-for="SmsReminderTemplate" rows="3"></textarea></div>
-
-            <div class="col-12"><hr class="my-2" /></div>
-            <div class="col-md-3"><label class="form-label">MikroTik Host</label><input class="form-control" asp-for="MikrotikHost" /></div>
-            <div class="col-md-2"><label class="form-label">API Port</label><input class="form-control" asp-for="MikrotikApiPort" type="number" min="1" max="65535" /></div>
-            <div class="col-md-3"><label class="form-label">MikroTik API User</label><input class="form-control" asp-for="MikrotikApiUser" /></div>
-            <div class="col-md-4"><label class="form-label">MikroTik API Password</label><input class="form-control" asp-for="MikrotikApiPassword" type="password" /></div>
-
-            <div class="col-12"><hr class="my-2" /></div>
-            <div class="col-md-4"><label class="form-label">GCash Account Name</label><input class="form-control" asp-for="GCashAccountName" /></div>
-            <div class="col-md-4"><label class="form-label">GCash Account Number</label><input class="form-control" asp-for="GCashAccountNumber" /></div>
-            <div class="col-md-4"><label class="form-label">GCash QR Code URL</label><input class="form-control" asp-for="GCashQrCodeUrl" /></div>
-
-            <div class="col-12">
-                <button class="btn btn-primary">
-                    <i class="ti ti-device-floppy me-1"></i>Save settings
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
 <div class="card">
     <div class="card-header">
-        <h2 class="card-title mb-0">Database Backup &amp; Restore</h2>
+        <ul class="nav nav-tabs card-header-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="system-branding-tab" data-bs-toggle="tab" data-bs-target="#system-branding-pane" type="button" role="tab" aria-controls="system-branding-pane" aria-selected="true">
+                    <i class="ti ti-building-store me-1"></i>System Branding
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="semaphore-tab" data-bs-toggle="tab" data-bs-target="#semaphore-pane" type="button" role="tab" aria-controls="semaphore-pane" aria-selected="false">
+                    <i class="ti ti-message-2 me-1"></i>Semaphore
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="mikrotik-tab" data-bs-toggle="tab" data-bs-target="#mikrotik-pane" type="button" role="tab" aria-controls="mikrotik-pane" aria-selected="false">
+                    <i class="ti ti-router me-1"></i>MikroTik
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="gcash-tab" data-bs-toggle="tab" data-bs-target="#gcash-pane" type="button" role="tab" aria-controls="gcash-pane" aria-selected="false">
+                    <i class="ti ti-wallet me-1"></i>GCash
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="database-tab" data-bs-toggle="tab" data-bs-target="#database-pane" type="button" role="tab" aria-controls="database-pane" aria-selected="false">
+                    <i class="ti ti-database me-1"></i>Database Backup &amp; Restore
+                </button>
+            </li>
+        </ul>
     </div>
     <div class="card-body">
-        <div class="row g-3 align-items-end">
-            <div class="col-lg-5">
-                <label class="form-label">Backup Database</label>
-                <a class="btn btn-outline-primary w-100" asp-action="BackupDatabase">
-                    <i class="ti ti-download me-1"></i>Download JSON backup
-                </a>
-            </div>
-            <div class="col-lg-7">
-                <form asp-action="RestoreDatabase" method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
-                    <div class="col-md">
-                        <label class="form-label">Restore Database</label>
-                        <input class="form-control" type="file" name="backupFile" accept=".json,application/json" required />
+        <input type="hidden" asp-for="CompanyLogoUrl" form="settingsForm" />
+        <input type="hidden" asp-for="BrowserLogoUrl" form="settingsForm" />
+
+        <div class="tab-content">
+            <div class="tab-pane active show" id="system-branding-pane" role="tabpanel" aria-labelledby="system-branding-tab" tabindex="0">
+                <div class="row g-3">
+                    <div class="col-lg-4">
+                        <label class="form-label required">System Display Name</label>
+                        <input class="form-control" asp-for="SystemDisplayName" placeholder="3JBGW Billing" required form="settingsForm" />
                     </div>
-                    <div class="col-md-auto">
-                        <button class="btn btn-danger">
-                            <i class="ti ti-upload me-1"></i>Restore backup
+                    <div class="col-lg-4">
+                        <label class="form-label required">Company Name</label>
+                        <input class="form-control" asp-for="CompanyName" required form="settingsForm" />
+                    </div>
+                    <div class="col-lg-2">
+                        <label class="form-label">Monthly Due Day</label>
+                        <input class="form-control" asp-for="MonthlyDueDay" type="number" min="1" max="31" form="settingsForm" />
+                    </div>
+                    <div class="col-lg-2">
+                        <label class="form-label">Currency</label>
+                        <input class="form-control" asp-for="Currency" form="settingsForm" />
+                    </div>
+
+                    <div class="col-lg-6">
+                        <label class="form-label">Company Logo</label>
+                        <input class="form-control" type="file" name="companyLogoFile" accept="image/*,.ico,.svg" form="settingsForm" />
+                        @if (!string.IsNullOrWhiteSpace(Model.CompanyLogoUrl))
+                        {
+                            <div class="mt-2 d-flex align-items-center gap-2">
+                                <img src="@Model.CompanyLogoUrl" alt="Company logo" class="settings-logo-preview" />
+                                <span class="text-secondary">@Model.CompanyLogoUrl</span>
+                            </div>
+                        }
+                    </div>
+                    <div class="col-lg-6">
+                        <label class="form-label">Browser Page Logo</label>
+                        <input class="form-control" type="file" name="browserLogoFile" accept="image/*,.ico,.svg" form="settingsForm" />
+                        @if (!string.IsNullOrWhiteSpace(Model.BrowserLogoUrl))
+                        {
+                            <div class="mt-2 d-flex align-items-center gap-2">
+                                <img src="@Model.BrowserLogoUrl" alt="Browser logo" width="32" height="32" class="border rounded" />
+                                <span class="text-secondary">@Model.BrowserLogoUrl</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="col-12 d-flex justify-content-end">
+                        <button class="btn btn-primary" form="settingsForm">
+                            <i class="ti ti-device-floppy me-1"></i>Save settings
                         </button>
                     </div>
-                </form>
+                </div>
+            </div>
+
+            <div class="tab-pane" id="semaphore-pane" role="tabpanel" aria-labelledby="semaphore-tab" tabindex="0">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Semaphore API Key</label>
+                        <input class="form-control" asp-for="SemaphoreApiKey" form="settingsForm" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Semaphore Sender Name</label>
+                        <input class="form-control" asp-for="SemaphoreSenderName" form="settingsForm" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">SMS reminder template</label>
+                        <textarea class="form-control" asp-for="SmsReminderTemplate" rows="4" form="settingsForm"></textarea>
+                    </div>
+                    <div class="col-12 d-flex justify-content-end">
+                        <button class="btn btn-primary" form="settingsForm">
+                            <i class="ti ti-device-floppy me-1"></i>Save settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane" id="mikrotik-pane" role="tabpanel" aria-labelledby="mikrotik-tab" tabindex="0">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">MikroTik Host</label>
+                        <input class="form-control" asp-for="MikrotikHost" form="settingsForm" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">API Port</label>
+                        <input class="form-control" asp-for="MikrotikApiPort" type="number" min="1" max="65535" form="settingsForm" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">MikroTik API User</label>
+                        <input class="form-control" asp-for="MikrotikApiUser" form="settingsForm" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">MikroTik API Password</label>
+                        <input class="form-control" asp-for="MikrotikApiPassword" type="password" form="settingsForm" />
+                    </div>
+                    <div class="col-12 d-flex justify-content-end">
+                        <button class="btn btn-primary" form="settingsForm">
+                            <i class="ti ti-device-floppy me-1"></i>Save settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane" id="gcash-pane" role="tabpanel" aria-labelledby="gcash-tab" tabindex="0">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">GCash Account Name</label>
+                        <input class="form-control" asp-for="GCashAccountName" form="settingsForm" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">GCash Account Number</label>
+                        <input class="form-control" asp-for="GCashAccountNumber" form="settingsForm" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">GCash QR Code URL</label>
+                        <input class="form-control" asp-for="GCashQrCodeUrl" form="settingsForm" />
+                    </div>
+                    <div class="col-12 d-flex justify-content-end">
+                        <button class="btn btn-primary" form="settingsForm">
+                            <i class="ti ti-device-floppy me-1"></i>Save settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane" id="database-pane" role="tabpanel" aria-labelledby="database-tab" tabindex="0">
+                <div class="row g-3 align-items-end">
+                    <div class="col-lg-5">
+                        <label class="form-label">Backup Database</label>
+                        <a class="btn btn-outline-primary w-100" asp-action="BackupDatabase">
+                            <i class="ti ti-download me-1"></i>Download JSON backup
+                        </a>
+                    </div>
+                    <div class="col-lg-7">
+                        <form asp-action="RestoreDatabase" method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
+                            <div class="col-md">
+                                <label class="form-label">Restore Database</label>
+                                <input class="form-control" type="file" name="backupFile" accept=".json,application/json" required />
+                            </div>
+                            <div class="col-md-auto">
+                                <button class="btn btn-danger">
+                                    <i class="ti ti-upload me-1"></i>Restore backup
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

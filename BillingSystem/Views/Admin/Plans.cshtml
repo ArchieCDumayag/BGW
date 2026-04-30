@@ -1,18 +1,32 @@
-@model IReadOnlyList<ServicePlan>
+@model PlansPageViewModel
 @{
     ViewData["Title"] = "Plans";
-    var clients = ViewBag.Clients as IReadOnlyList<Client> ?? Array.Empty<Client>();
-    int CountClients(ServicePlan plan) => clients.Count(c =>
-        c.PlanAmount == plan.Price &&
-        (c.BillingType ?? "").Equals(plan.Type, StringComparison.OrdinalIgnoreCase));
 }
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
     <div>
         <h1 class="page-title h3 mb-1">Plans</h1>
-        <p class="text-body-secondary mb-0">Plan name, price, subscriber count, and billing type.</p>
+        <p class="text-body-secondary mb-0">Plan details, local subscribers, and MikroTik profile users.</p>
     </div>
-    <span class="badge text-bg-light border">@Model.Count plans</span>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="badge text-bg-light border">@Model.Plans.Count plans</span>
+        <span class="badge text-bg-light border">@Model.TotalLocalClients local clients</span>
+        <span class="badge text-bg-light border">@Model.TotalMikrotikUsers MikroTik users</span>
+    </div>
+</div>
+
+<div class="alert @(Model.IsMikrotikConnected ? "alert-success" : "alert-warning") d-flex align-items-center gap-2 py-2">
+    <i class="ti @(Model.IsMikrotikConnected ? "ti-router" : "ti-router-off")"></i>
+    <div>
+        <strong>@Model.MikrotikConnectionMessage</strong>
+        @if (!string.IsNullOrWhiteSpace(Model.RouterHost))
+        {
+            <span class="text-secondary ms-1">@Model.RouterHost</span>
+        }
+    </div>
+    <a class="btn btn-sm btn-outline-secondary ms-auto" asp-action="Plans">
+        <i class="ti ti-refresh me-1"></i>Refresh
+    </a>
 </div>
 
 <div class="card border-0 shadow-sm mb-3">
@@ -42,30 +56,105 @@
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-semibold">Plans</div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-sm table-hover align-middle mb-0">
                 <thead class="table-light">
-                    <tr><th>Plan Name</th><th>Price</th><th>Total Clients</th><th>Type</th><th class="text-end">Actions</th></tr>
+                    <tr>
+                        <th>Plan Name</th>
+                        <th>Price</th>
+                        <th>Local Clients</th>
+                        <th>MikroTik Users</th>
+                        <th>MikroTik Profile</th>
+                        <th>Rate Limit</th>
+                        <th>Type</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
                 </thead>
                 <tbody>
-                @if (!Model.Any())
+                @if (!Model.Plans.Any())
                 {
-                    <tr><td colspan="5" class="text-center text-secondary py-4">No plans added yet.</td></tr>
+                    <tr><td colspan="8" class="text-center text-secondary py-4">No plans added yet.</td></tr>
                 }
-                @foreach (var plan in Model)
+                @foreach (var row in Model.Plans)
                 {
+                    var plan = row.Plan;
+                    var profile = row.MikrotikProfile;
                     <tr>
                         <td class="fw-semibold">@plan.PlanName</td>
                         <td>PHP @plan.Price.ToString("N0")</td>
-                        <td>@CountClients(plan)</td>
+                        <td>@row.LocalClientCount</td>
+                        <td>
+                            <span class="fw-semibold">@row.MikrotikUserCount</span>
+                            @if (profile is not null)
+                            {
+                                <span class="text-secondary small ms-1">(@profile.OnlineUsers online)</span>
+                            }
+                        </td>
+                        <td>@(profile?.Name ?? "-")</td>
+                        <td>@(string.IsNullOrWhiteSpace(profile?.RateLimit) ? "-" : profile.RateLimit)</td>
                         <td><span class="badge text-bg-blue-lt">@plan.Type</span></td>
                         <td class="text-end">
                             <form asp-action="DeletePlan" method="post" class="d-inline">
                                 <input type="hidden" name="id" value="@plan.Id" />
                                 <button class="btn btn-sm btn-outline-danger">Delete</button>
                             </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-semibold">MikroTik Plan Profiles</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Profile</th>
+                        <th>Users</th>
+                        <th>Online</th>
+                        <th>Offline</th>
+                        <th>Disabled</th>
+                        <th>Rate Limit</th>
+                        <th>Local Address</th>
+                        <th>Remote Address</th>
+                        <th>DNS</th>
+                        <th>Matched</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @if (!Model.MikrotikProfiles.Any())
+                {
+                    <tr><td colspan="10" class="text-center text-secondary py-4">No MikroTik profile details available.</td></tr>
+                }
+                @foreach (var profile in Model.MikrotikProfiles)
+                {
+                    <tr>
+                        <td class="fw-semibold">@profile.Name</td>
+                        <td>@profile.TotalUsers</td>
+                        <td>@profile.OnlineUsers</td>
+                        <td>@profile.OfflineUsers</td>
+                        <td>@profile.DisabledUsers</td>
+                        <td>@(string.IsNullOrWhiteSpace(profile.RateLimit) ? "-" : profile.RateLimit)</td>
+                        <td>@(string.IsNullOrWhiteSpace(profile.LocalAddress) ? "-" : profile.LocalAddress)</td>
+                        <td>@(string.IsNullOrWhiteSpace(profile.RemoteAddress) ? "-" : profile.RemoteAddress)</td>
+                        <td>@(string.IsNullOrWhiteSpace(profile.DnsServer) ? "-" : profile.DnsServer)</td>
+                        <td>
+                            @if (profile.IsMatchedToLocalPlan)
+                            {
+                                <span class="badge text-bg-green-lt">Yes</span>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-secondary-lt">No</span>
+                            }
                         </td>
                     </tr>
                 }

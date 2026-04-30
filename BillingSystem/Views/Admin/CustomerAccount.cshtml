@@ -3,11 +3,12 @@
     ViewData["Title"] = "View Customer Account";
     var client = Model.Client;
     var billingRule = Model.BillingRule;
+    var invariantCulture = System.Globalization.CultureInfo.InvariantCulture;
     var statusBadge = client.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" :
         client.Status.Equals("DC", StringComparison.OrdinalIgnoreCase) ? "bg-red-lt" : "bg-secondary-lt";
     var hasCoordinates = client.Latitude.HasValue && client.Longitude.HasValue;
     var coordinateText = hasCoordinates
-        ? $"{client.Latitude!.Value.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)}, {client.Longitude!.Value.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)}"
+        ? $"{client.Latitude!.Value.ToString("0.######", invariantCulture)}, {client.Longitude!.Value.ToString("0.######", invariantCulture)}"
         : "-";
     var mapQuery = hasCoordinates
         ? coordinateText
@@ -15,8 +16,21 @@
     var accountMessage = TempData["CustomerAccountMessage"] as string;
     var accountError = TempData["CustomerAccountError"] as string;
     var currentMonth = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
-    var currentMonthValue = currentMonth.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+    var today = DateOnly.FromDateTime(DateTime.Today);
+    var currentMonthValue = currentMonth.ToString("yyyy-MM", invariantCulture);
     var planOptions = new[] { 800m, 1000m, 1200m, 1500m };
+    var paymentClientLabel = string.IsNullOrWhiteSpace(client.PppoeUsername)
+        ? client.Name
+        : $"{client.Name} - {client.PppoeUsername}";
+    var suggestedPaymentAmount = billingRule.HasEarlyDiscount
+        && billingRule.DiscountDeadline is DateOnly discountDeadline
+        && today < discountDeadline
+            ? billingRule.DiscountedCurrentBill
+            : client.Bills;
+    var suggestedPaymentAmountValue = suggestedPaymentAmount > 0
+        ? suggestedPaymentAmount.ToString("0.##", invariantCulture)
+        : "";
+    var paymentDateValue = DateTime.Today.ToString("yyyy-MM-dd", invariantCulture);
 }
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -28,12 +42,18 @@
         <a class="btn btn-outline-secondary" asp-action="Clients">
             <i class="ti ti-arrow-left me-1"></i>Clients
         </a>
-        <a class="btn btn-outline-primary" asp-action="ClientHistory" asp-route-id="@client.Id">
-            <i class="ti ti-history me-1"></i>Client history
+        <a class="btn btn-outline-primary" asp-action="AccountStatement" asp-route-id="@client.Id" asp-route-year="@Model.SelectedYear" target="_blank" rel="noopener">
+            <i class="ti ti-file-description me-1"></i>Account
         </a>
-        <a class="btn btn-primary" asp-action="Payments">
-            <i class="ti ti-cash me-1"></i>Add payment
+        <a class="btn btn-outline-primary" asp-action="BillingStatement" asp-route-id="@client.Id" target="_blank" rel="noopener">
+            <i class="ti ti-file-invoice me-1"></i>Billing
         </a>
+        <a class="btn btn-outline-primary" asp-action="ThermalReceipt" asp-route-id="@client.Id" target="_blank" rel="noopener">
+            <i class="ti ti-receipt me-1"></i>Thermal
+        </a>
+        <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#addCustomerPaymentModal">
+            <i class="ti ti-cash me-1"></i>Payment
+        </button>
     </div>
 </div>
 
@@ -46,6 +66,137 @@
 {
     <div class="alert alert-danger" role="alert">@accountError</div>
 }
+
+<div class="modal modal-blur fade" id="addCustomerPaymentModal" tabindex="-1" aria-labelledby="addCustomerPaymentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <form asp-action="AddPayment" method="post" class="modal-content">
+            <input type="hidden" name="ClientId" value="@client.Id" />
+            <input type="hidden" name="returnToCustomerAccount" value="true" />
+            <div class="modal-header">
+                <h5 class="modal-title" id="addCustomerPaymentModalLabel">Add payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <label class="form-label">Client</label>
+                        <input class="form-control" value="@paymentClientLabel" disabled />
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label">Date</label>
+                        <input class="form-control" id="customerPaymentDate" name="PaidOn" type="date" value="@paymentDateValue" required />
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label">Amount</label>
+                        <input class="form-control" id="customerPaymentAmount" name="Amount" type="number" min="0.01" step="0.01" value="@suggestedPaymentAmountValue" required />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Method</label>
+                        <select class="form-select" name="Method">
+                            <option>Cash</option>
+                            <option>GCash</option>
+                            <option>Bank</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Reference number</label>
+                        <input class="form-control" name="ReferenceNumber" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Collected by</label>
+                        <input class="form-control" name="CollectedBy" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Remarks</label>
+                        <input class="form-control" name="Remarks" />
+                    </div>
+                    <div class="col-12">
+                        <div id="customerPaymentRuleInfo"
+                             class="alert @(billingRule.HasEarlyDiscount ? "alert-success" : "alert-info") mb-0"
+                             data-billing-type="@billingRule.BillingType"
+                             data-schedule="@billingRule.ScheduleLabel"
+                             data-due="@billingRule.NextDueDate.ToString("MMM dd, yyyy")"
+                             data-current-bill="@client.Bills.ToString("0.##", invariantCulture)"
+                             data-discounted-bill="@billingRule.DiscountedCurrentBill.ToString("0.##", invariantCulture)"
+                             data-has-discount="@billingRule.HasEarlyDiscount.ToString().ToLowerInvariant()"
+                             data-discount="@billingRule.EarlyDiscountAmount.ToString("0.##", invariantCulture)"
+                             data-deadline="@(billingRule.DiscountDeadline?.ToString("MMM dd, yyyy") ?? "")"
+                             data-deadline-iso="@(billingRule.DiscountDeadline?.ToString("yyyy-MM-dd", invariantCulture) ?? "")"
+                             role="alert"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary">
+                    <i class="ti ti-cash me-1"></i>Save payment
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal modal-blur fade" id="editPlanModal" tabindex="-1" aria-labelledby="editPlanModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <form asp-action="ChangeClientPlan" method="post" class="modal-content">
+            <input type="hidden" name="id" value="@client.Id" />
+            <input type="hidden" name="effectiveMonth" value="@currentMonthValue" />
+            <div class="modal-header">
+                <h5 class="modal-title" id="editPlanModalLabel">Edit plan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label">Plan amount</label>
+                <div class="input-group">
+                    <span class="input-group-text">PHP</span>
+                    <select class="form-select" name="planAmount" aria-label="Plan amount" required>
+                        @foreach (var planOption in planOptions)
+                        {
+                            <option value="@planOption.ToString("0.##", invariantCulture)" selected="@(client.PlanAmount == planOption)">
+                                @planOption.ToString("N0")
+                            </option>
+                        }
+                    </select>
+                </div>
+                <div class="small text-secondary mt-2">Effective @currentMonth.ToString("MMMM yyyy") onward</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary">
+                    <i class="ti ti-device-floppy me-1"></i>Save
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal modal-blur fade" id="editCurrentBillModal" tabindex="-1" aria-labelledby="editCurrentBillModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <form asp-action="UpdateMonthlyBill" method="post" class="modal-content">
+            <input type="hidden" name="id" value="@client.Id" />
+            <input type="hidden" name="billingMonth" id="editCurrentBillMonth" />
+            <input type="hidden" name="returnYear" value="@Model.SelectedYear" />
+            <div class="modal-header">
+                <h5 class="modal-title" id="editCurrentBillModalLabel">Edit current bill</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-secondary small mb-2" id="editCurrentBillMonthLabel"></div>
+                <label class="form-label" for="editCurrentBillAmount">Bill amount</label>
+                <div class="input-group">
+                    <span class="input-group-text">PHP</span>
+                    <input class="form-control text-end" id="editCurrentBillAmount" name="billAmount" type="number" min="0" step="0.01" required />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary">
+                    <i class="ti ti-device-floppy me-1"></i>Save
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <div class="row row-cards mb-3">
     <div class="col-lg-6">
@@ -97,26 +248,13 @@
             </div>
             <div class="col-md-4">
                 <div class="text-secondary small">Plan</div>
-                <div class="fw-semibold">PHP @client.PlanAmount.ToString("N0")</div>
-                <form asp-action="ChangeClientPlan" method="post" class="mt-2">
-                    <input type="hidden" name="id" value="@client.Id" />
-                    <input type="hidden" name="effectiveMonth" value="@currentMonthValue" />
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text">PHP</span>
-                        <select class="form-select" name="planAmount" aria-label="Plan amount" required>
-                            @foreach (var planOption in planOptions)
-                            {
-                                <option value="@planOption.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" selected="@(client.PlanAmount == planOption)">
-                                    @planOption.ToString("N0")
-                                </option>
-                            }
-                        </select>
-                        <button class="btn btn-outline-primary" type="submit">
-                            <i class="ti ti-device-floppy me-1"></i>Update
-                        </button>
-                    </div>
-                    <div class="small text-secondary mt-1">Effective @currentMonth.ToString("MMMM yyyy") onward</div>
-                </form>
+                <div class="d-flex align-items-center gap-2 mt-1">
+                    <div class="fw-semibold">PHP @client.PlanAmount.ToString("N0")</div>
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#editPlanModal" title="Edit plan">
+                        <i class="ti ti-edit"></i>
+                    </button>
+                </div>
+                <div class="small text-secondary mt-1">Effective @currentMonth.ToString("MMMM yyyy") onward</div>
             </div>
             <div class="col-md-4">
                 <div class="text-secondary small">Due</div>
@@ -174,7 +312,7 @@
                         <th class="text-end">Advance</th>
                         <th class="text-end">Current bill</th>
                         <th class="text-end">Total paid</th>
-                        <th>Date</th>
+                        <th>Billing breakdown</th>
                         <th>Method</th>
                         <th>Reference</th>
                         <th>Remarks</th>
@@ -184,26 +322,28 @@
                 <tbody>
                 @foreach (var bill in Model.BillingMonths)
                 {
-                    var billMonthValue = bill.Month.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
-                    var billAmountValue = bill.BillAmount.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                    var billMonthValue = bill.Month.ToString("yyyy-MM", invariantCulture);
+                    var billAmountValue = bill.BillAmount.ToString("0.##", invariantCulture);
                     <tr>
                         <td class="fw-medium">@bill.MonthLabel</td>
                         <td>@bill.DueDate.ToString("MMM dd, yyyy")</td>
                         <td class="text-end">PHP @bill.Balance.ToString("N0")</td>
                         <td class="text-end">@(bill.Advance > 0 ? $"PHP {bill.Advance:N0}" : "-")</td>
-                        <td class="text-end" style="min-width: 190px;">
-                            <form asp-action="UpdateMonthlyBill" method="post" class="d-flex justify-content-end">
-                                <input type="hidden" name="id" value="@client.Id" />
-                                <input type="hidden" name="billingMonth" value="@billMonthValue" />
-                                <input type="hidden" name="returnYear" value="@Model.SelectedYear" />
-                                <div class="input-group input-group-sm">
-                                    <span class="input-group-text">PHP</span>
-                                    <input class="form-control text-end" name="billAmount" type="number" min="0" step="0.01" value="@billAmountValue" aria-label="Current bill for @bill.MonthLabel" required />
-                                    <button class="btn btn-outline-primary" type="submit" title="Save current bill">
-                                        <i class="ti ti-device-floppy"></i>
-                                    </button>
-                                </div>
-                            </form>
+                        <td class="text-end">
+                            <div class="d-flex justify-content-end align-items-center gap-2">
+                                <span class="fw-semibold">PHP @bill.BillAmount.ToString("N0")</span>
+                                <button class="btn btn-sm btn-outline-primary"
+                                        type="button"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#editCurrentBillModal"
+                                        data-billing-month="@billMonthValue"
+                                        data-month-label="@bill.MonthLabel"
+                                        data-bill-amount="@billAmountValue"
+                                        title="Edit current bill"
+                                        aria-label="Edit current bill for @bill.MonthLabel">
+                                    <i class="ti ti-edit"></i>
+                                </button>
+                            </div>
                             @if (bill.DiscountAmount > 0)
                             {
                                 <div class="small text-success mt-1">
@@ -216,7 +356,22 @@
                             }
                         </td>
                         <td class="text-end">PHP @bill.AmountPaid.ToString("N0")</td>
-                        <td>@bill.PaymentDates</td>
+                        <td>
+                            @if (bill.PaymentBreakdown.Count == 0)
+                            {
+                                <span>-</span>
+                            }
+                            else
+                            {
+                                foreach (var payment in bill.PaymentBreakdown)
+                                {
+                                    <div class="d-flex justify-content-between gap-3">
+                                        <span>@payment.PaidOn.ToString("MMM dd, yyyy")</span>
+                                        <span class="fw-semibold text-nowrap">PHP @payment.Amount.ToString("N0")</span>
+                                    </div>
+                                }
+                            }
+                        </td>
                         <td>@bill.Methods</td>
                         <td>@bill.References</td>
                         <td>@bill.Remarks</td>
@@ -228,3 +383,68 @@
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const paymentDate = document.getElementById("customerPaymentDate");
+            const amountInput = document.getElementById("customerPaymentAmount");
+            const info = document.getElementById("customerPaymentRuleInfo");
+
+            if (!paymentDate || !amountInput || !info) {
+                return;
+            }
+
+            let lastSuggestedAmount = amountInput.value;
+
+            function money(value) {
+                return new Intl.NumberFormat("en-PH", { maximumFractionDigits: 0 }).format(Number(value || 0));
+            }
+
+            function updatePaymentSuggestion() {
+                const hasDiscount = info.dataset.hasDiscount === "true";
+                const currentBill = Number(info.dataset.currentBill || 0);
+                const discountedBill = Number(info.dataset.discountedBill || currentBill);
+                const discount = Number(info.dataset.discount || 0);
+                const paidBeforeDeadline = hasDiscount
+                    && paymentDate.value
+                    && info.dataset.deadlineIso
+                    && paymentDate.value < info.dataset.deadlineIso;
+                const suggestedBill = paidBeforeDeadline ? discountedBill : currentBill;
+
+                info.className = "alert " + (hasDiscount ? "alert-success" : "alert-info") + " mb-0";
+                info.innerHTML = hasDiscount && paidBeforeDeadline
+                    ? "<strong>Xentronet early discount:</strong> prepaid every 1st day. Current bill PHP " + money(currentBill) + ", less PHP " + money(discount) + " because payment date is before " + info.dataset.deadline + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>."
+                    : hasDiscount
+                    ? "<strong>Xentronet:</strong> prepaid every 1st day. PHP " + money(discount) + " discount only applies before " + info.dataset.deadline + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>."
+                    : "<strong>" + info.dataset.billingType + ":</strong> " + info.dataset.schedule + ". Next due: " + info.dataset.due + ". Suggested amount: <strong>PHP " + money(suggestedBill) + "</strong>.";
+
+                if ((!amountInput.value || amountInput.value === lastSuggestedAmount) && suggestedBill > 0) {
+                    amountInput.value = suggestedBill.toFixed(2);
+                    lastSuggestedAmount = amountInput.value;
+                }
+            }
+
+            paymentDate.addEventListener("change", updatePaymentSuggestion);
+            updatePaymentSuggestion();
+
+            const editCurrentBillModal = document.getElementById("editCurrentBillModal");
+            if (editCurrentBillModal) {
+                editCurrentBillModal.addEventListener("show.bs.modal", function (event) {
+                    const button = event.relatedTarget;
+                    const billingMonthInput = document.getElementById("editCurrentBillMonth");
+                    const billAmountInput = document.getElementById("editCurrentBillAmount");
+                    const monthLabel = document.getElementById("editCurrentBillMonthLabel");
+
+                    if (!button || !billingMonthInput || !billAmountInput || !monthLabel) {
+                        return;
+                    }
+
+                    billingMonthInput.value = button.dataset.billingMonth || "";
+                    billAmountInput.value = button.dataset.billAmount || "";
+                    monthLabel.textContent = button.dataset.monthLabel || "";
+                });
+            }
+        });
+    </script>
+}
