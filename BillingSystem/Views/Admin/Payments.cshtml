@@ -4,6 +4,7 @@
     var clients = ViewBag.Clients as IReadOnlyList<Client> ?? Array.Empty<Client>();
     var billingRules = ViewBag.ClientBillingRules as IReadOnlyDictionary<int, BillingRuleInfo> ?? new Dictionary<int, BillingRuleInfo>();
     var currentBills = ViewBag.ClientCurrentBills as IReadOnlyDictionary<int, decimal> ?? new Dictionary<int, decimal>();
+    var clientPppoeStatuses = ViewBag.ClientPppoeStatuses as IReadOnlyDictionary<int, string> ?? new Dictionary<int, string>();
     var invariantCulture = System.Globalization.CultureInfo.InvariantCulture;
     var selectedMonthValue = ViewBag.SelectedMonthValue as string ?? DateTime.Today.ToString("yyyy-MM");
     var selectedMonthLabel = ViewBag.SelectedMonthLabel as string ?? DateTime.Today.ToString("MMMM yyyy");
@@ -154,6 +155,7 @@
                         <th>#</th>
                         <th>Client</th>
                         <th>Type</th>
+                        <th>Client status</th>
                         <th>Due date</th>
                         <th class="text-end">Previous balance</th>
                         <th class="text-end">Advance</th>
@@ -171,9 +173,15 @@
                     var statusClass = row.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" :
                         row.Status.Equals("Partial", StringComparison.OrdinalIgnoreCase) ? "bg-yellow-lt" :
                         row.Status.Equals("Unpaid", StringComparison.OrdinalIgnoreCase) ? "bg-red-lt" : "bg-secondary-lt";
+                    var clientPppoeStatus = clientPppoeStatuses.TryGetValue(client.Id, out var pppoeStatus)
+                        ? pppoeStatus
+                        : "DISCONNECTED (EXPIRED)";
+                    var clientStatusClass = clientPppoeStatus.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase)
+                        ? "bg-green-lt"
+                        : "bg-red-lt";
                     <tr class="payment-current-bill-row"
                         data-customer-account-url="@Url.Action("CustomerAccount", new { id = client.Id })"
-                        data-search="@($"{client.AccountNumber} {client.Name} {client.PppoeUsername} {client.BillingType} {row.DueDate:MMM dd, yyyy} {row.ReferralNames} {row.Status}")"
+                        data-search="@($"{client.AccountNumber} {client.Name} {client.PppoeUsername} {client.BillingType} {clientPppoeStatus} {row.DueDate:MMM dd, yyyy} {row.ReferralNames} {row.Status}")"
                         tabindex="0"
                         role="link"
                         title="Open customer account">
@@ -183,6 +191,7 @@
                             <div class="small text-secondary">@client.PppoeUsername</div>
                         </td>
                         <td>@client.BillingType</td>
+                        <td><span class="badge @clientStatusClass">@clientPppoeStatus</span></td>
                         <td>@row.DueDate.ToString("MMM dd, yyyy")</td>
                         <td class="text-end">@(row.PreviousBalance > 0 ? $"PHP {row.PreviousBalance:N0}" : "-")</td>
                         <td class="text-end">@(row.Advance > 0 ? $"PHP {row.Advance:N0}" : "-")</td>

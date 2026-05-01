@@ -78,7 +78,10 @@ public sealed class AdminController(
     public async Task<IActionResult> Clients(string? q, string? status, string? area, string? type, string? sort)
     {
         var data = await store.GetAsync();
+        var pppoeBindingInfo = await BuildClientPppoeBindingInfoAsync(data);
+        var clientPppoeStatuses = pppoeBindingInfo.Statuses;
         var clients = data.Clients.AsEnumerable();
+        var selectedStatus = NormalizeClientPppoeStatusFilter(status);
 
         if (!string.IsNullOrWhiteSpace(q))
         {
@@ -87,9 +90,11 @@ public sealed class AdminController(
                 || (c.AccountNumber ?? "").Contains(q, StringComparison.OrdinalIgnoreCase));
         }
 
-        if (!string.IsNullOrWhiteSpace(status))
+        if (!string.IsNullOrWhiteSpace(selectedStatus))
         {
-            clients = clients.Where(c => (c.Status ?? "").Equals(status, StringComparison.OrdinalIgnoreCase));
+            clients = clients.Where(c =>
+                clientPppoeStatuses.TryGetValue(c.Id, out var pppoeStatus)
+                && pppoeStatus.Equals(selectedStatus, StringComparison.OrdinalIgnoreCase));
         }
 
         if (!string.IsNullOrWhiteSpace(area))
@@ -103,7 +108,7 @@ public sealed class AdminController(
         }
 
         ViewBag.Query = q ?? "";
-        ViewBag.Status = status ?? "";
+        ViewBag.Status = selectedStatus;
         ViewBag.Area = area ?? "";
         ViewBag.Type = type ?? "";
         ViewBag.Sort = sort ?? "";
@@ -113,6 +118,13 @@ public sealed class AdminController(
         ViewBag.ClientDeleteCaptchas = data.Clients.ToDictionary(c => c.Id, DeleteCaptchaQuestion);
         ViewBag.NextAccountNumber = NextAccountNumber(data.Clients);
         ViewBag.ReferralClients = data.Clients.OrderBy(c => c.Name ?? "").ThenBy(c => AccountSortKey(c.AccountNumber)).ToList();
+        ViewBag.PppoeUsernameOptions = pppoeBindingInfo.UnassignedUsernames;
+        ViewBag.ClientPppoeStatuses = clientPppoeStatuses;
+        ViewBag.ClientIdsNeedingPppoeBind = pppoeBindingInfo.ClientIdsNeedingBind;
+
+        string ClientPppoeStatusForSort(Client client) => clientPppoeStatuses.TryGetValue(client.Id, out var pppoeStatus)
+            ? pppoeStatus
+            : "DISCONNECTED (EXPIRED)";
 
         clients = sort switch
         {
@@ -122,8 +134,8 @@ public sealed class AdminController(
             "name-desc" => clients.OrderByDescending(c => c.Name ?? ""),
             "type" => clients.OrderBy(c => c.BillingType ?? "").ThenBy(c => c.Name ?? ""),
             "type-desc" => clients.OrderByDescending(c => c.BillingType ?? "").ThenBy(c => c.Name ?? ""),
-            "status" => clients.OrderBy(c => c.Status ?? "").ThenBy(c => c.Name ?? ""),
-            "status-desc" => clients.OrderByDescending(c => c.Status ?? "").ThenBy(c => c.Name ?? ""),
+            "status" => clients.OrderBy(ClientPppoeStatusForSort).ThenBy(c => c.Name ?? ""),
+            "status-desc" => clients.OrderByDescending(ClientPppoeStatusForSort).ThenBy(c => c.Name ?? ""),
             "plan" => clients.OrderBy(c => c.PlanAmount).ThenBy(c => c.Name ?? ""),
             "plan-desc" => clients.OrderByDescending(c => c.PlanAmount).ThenBy(c => c.Name ?? ""),
             "area" => clients.OrderBy(c => c.Area ?? "").ThenBy(c => c.Zone ?? "").ThenBy(c => c.Name ?? ""),
@@ -134,6 +146,29 @@ public sealed class AdminController(
         };
 
         return View(clients.ToList());
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BindClientPppoeFromClients(
+        int clientId,
+        string username,
+        string? q,
+        string? status,
+        string? area,
+        string? type,
+        string? sort)
+    {
+        var data = await store.GetAsync();
+        if (!TryBindClientPppoe(data, clientId, username, out _, out var bindMessage))
+        {
+            TempData["ClientError"] = bindMessage;
+            return RedirectToAction(nameof(Clients), new { q, status, area, type, sort });
+        }
+
+        await store.SaveAsync(data);
+        TempData["ClientMessage"] = bindMessage;
+        return RedirectToAction(nameof(Clients), new { q, status, area, type, sort });
     }
 
     [HttpPost]
@@ -668,6 +703,7 @@ public sealed class AdminController(
         ViewBag.ClientMap = data.Clients.ToDictionary(c => c.Id);
         ViewBag.ClientBillingRules = data.Clients.ToDictionary(c => c.Id, c => BillingRules.ForClient(c));
         ViewBag.ClientCurrentBills = CurrentBillAmountsForMonth(data, selectedMonth);
+        ViewBag.ClientPppoeStatuses = (await BuildClientPppoeBindingInfoAsync(data)).Statuses;
         ViewBag.SelectedMonthValue = selectedMonth.ToString("yyyy-MM", CultureInfo.InvariantCulture);
         ViewBag.SelectedMonthLabel = selectedMonth.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
         return View(BuildClientCurrentBillRows(data, selectedMonth));
@@ -884,6 +920,22 @@ public sealed class AdminController(
         var data = await store.GetAsync();
         await BuildPppoeModel(data, q, filter, show, saveSync: true);
         await store.SaveAsync(data);
+        return RedirectToAction(nameof(Pppoe), new { q, filter, show });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BindClientPppoe(int clientId, string username, string? q, string? filter, int show = 25)
+    {
+        var data = await store.GetAsync();
+        if (!TryBindClientPppoe(data, clientId, username, out _, out var bindMessage))
+        {
+            TempData["PppoeError"] = bindMessage;
+            return RedirectToAction(nameof(Pppoe), new { q, filter, show });
+        }
+
+        await store.SaveAsync(data);
+        TempData["PppoeMessage"] = bindMessage;
         return RedirectToAction(nameof(Pppoe), new { q, filter, show });
     }
 
@@ -1820,12 +1872,14 @@ public sealed class AdminController(
         var query = q?.Trim() ?? "";
         var selectedFilter = string.IsNullOrWhiteSpace(filter) ? "All" : filter.Trim();
         var selectedShow = show is 10 or 25 or 50 or 100 ? show : 25;
+        var clientsWithoutPppoe = BuildClientsWithoutPppoe(data);
 
         if (string.IsNullOrWhiteSpace(settings.MikrotikHost)
             || string.IsNullOrWhiteSpace(settings.MikrotikApiUser)
             || string.IsNullOrWhiteSpace(settings.MikrotikApiPassword))
         {
-            var localRows = ApplyPppoeFilters(BuildLocalPppoeRows(data), query, selectedFilter)
+            var allLocalRows = BuildLocalPppoeRows(data);
+            var localRows = ApplyPppoeFilters(allLocalRows, query, selectedFilter)
                 .Take(selectedShow)
                 .Select((row, index) => row with { Number = index + 1 })
                 .ToList();
@@ -1843,7 +1897,9 @@ public sealed class AdminController(
                 ActiveUsers = localRows.Count(r => r.Status == "Online"),
                 OfflineUsers = localRows.Count(r => r.Status == "Offline"),
                 DisabledUsers = localRows.Count(r => r.Status == "Disabled"),
-                TotalUsageGb = localRows.Sum(r => r.UsageGb)
+                TotalUsageGb = localRows.Sum(r => r.UsageGb),
+                ClientsWithoutPppoe = clientsWithoutPppoe,
+                PppoeUsernames = BuildPppoeUsernameOptions(allLocalRows.Where(row => !row.IsAssigned))
             };
         }
 
@@ -1889,12 +1945,15 @@ public sealed class AdminController(
                 ActiveUsers = allRows.Count(r => r.Status == "Online"),
                 OfflineUsers = allRows.Count(r => r.Status == "Offline"),
                 DisabledUsers = allRows.Count(r => r.Status == "Disabled"),
-                TotalUsageGb = allRows.Sum(r => r.UsageGb)
+                TotalUsageGb = allRows.Sum(r => r.UsageGb),
+                ClientsWithoutPppoe = clientsWithoutPppoe,
+                PppoeUsernames = BuildPppoeUsernameOptions(allRows.Where(row => !row.IsAssigned))
             };
         }
         catch (Exception ex)
         {
-            var localRows = ApplyPppoeFilters(BuildLocalPppoeRows(data), query, selectedFilter)
+            var allLocalRows = BuildLocalPppoeRows(data);
+            var localRows = ApplyPppoeFilters(allLocalRows, query, selectedFilter)
                 .Take(selectedShow)
                 .Select((row, index) => row with { Number = index + 1 })
                 .ToList();
@@ -1912,7 +1971,9 @@ public sealed class AdminController(
                 ActiveUsers = localRows.Count(r => r.Status == "Online"),
                 OfflineUsers = localRows.Count(r => r.Status == "Offline"),
                 DisabledUsers = localRows.Count(r => r.Status == "Disabled"),
-                TotalUsageGb = localRows.Sum(r => r.UsageGb)
+                TotalUsageGb = localRows.Sum(r => r.UsageGb),
+                ClientsWithoutPppoe = clientsWithoutPppoe,
+                PppoeUsernames = BuildPppoeUsernameOptions(allLocalRows.Where(row => !row.IsAssigned))
             };
         }
     }
@@ -1948,6 +2009,7 @@ public sealed class AdminController(
                     Profile = secret.Profile,
                     LastSeen = active is not null ? $"Online {active.Uptime}" : status,
                     Status = status,
+                    ClientStatus = BuildClientPppoeStatus(client, active is null || secret.Disabled),
                     UsageGb = usageGb,
                     IsAssigned = client is not null
                 };
@@ -1975,6 +2037,7 @@ public sealed class AdminController(
                     Profile = $"Php {client.PlanAmount:N0}",
                     LastSeen = pppoe?.LastSeenAt?.ToString("MMM dd, yyyy h:mm tt", CultureInfo.InvariantCulture) ?? status,
                     Status = status,
+                    ClientStatus = BuildClientPppoeStatus(client, status != "Online"),
                     IsAssigned = true
                 };
             })
@@ -1994,6 +2057,7 @@ public sealed class AdminController(
                 || row.CustomerName.Contains(query, StringComparison.OrdinalIgnoreCase)
                 || row.Profile.Contains(query, StringComparison.OrdinalIgnoreCase)
                 || row.Status.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.ClientStatus.Contains(query, StringComparison.OrdinalIgnoreCase)
                 || row.Address.Contains(query, StringComparison.OrdinalIgnoreCase));
         }
 
@@ -2002,12 +2066,279 @@ public sealed class AdminController(
             "Online" => filtered.Where(row => row.Status == "Online"),
             "Offline" => filtered.Where(row => row.Status == "Offline"),
             "Disabled" => filtered.Where(row => row.Status == "Disabled"),
+            "Active" => filtered.Where(row => row.ClientStatus == "ACTIVE"),
+            "Expired" => filtered.Where(row => row.ClientStatus == "DISCONNECTED (EXPIRED)"),
             "Assigned" => filtered.Where(row => row.IsAssigned),
             "Unassigned" => filtered.Where(row => !row.IsAssigned),
             _ => filtered
         };
 
         return filtered.ToList();
+    }
+
+    private static List<Client> BuildClientsWithoutPppoe(BillingData data)
+    {
+        return data.Clients
+            .Where(c => string.IsNullOrWhiteSpace(c.PppoeUsername))
+            .OrderBy(c => string.Equals(c.Status, "Active", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(c => c.Name)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildPppoeUsernameOptions(IEnumerable<PppoeAccountViewModel> rows)
+    {
+        return rows
+            .Select(row => row.Username.Trim())
+            .Where(username => !string.IsNullOrWhiteSpace(username))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> BuildUnassignedPppoeUsernameOptions(BillingData data)
+    {
+        var assignedUsernames = data.Clients
+            .Select(c => c.PppoeUsername?.Trim() ?? "")
+            .Where(username => !string.IsNullOrWhiteSpace(username))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return data.PppoeUsers
+            .Select(p => p.Username.Trim())
+            .Where(username => !string.IsNullOrWhiteSpace(username) && !assignedUsernames.Contains(username))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string BuildClientPppoeStatus(Client? client, bool isDisconnected)
+    {
+        if (client is null)
+        {
+            return "UNBOUND";
+        }
+
+        return isDisconnected
+            ? "DISCONNECTED (EXPIRED)"
+            : "ACTIVE";
+    }
+
+    private static async Task<(
+        IReadOnlyDictionary<int, string> Statuses,
+        IReadOnlyList<string> UnassignedUsernames,
+        IReadOnlySet<int> ClientIdsNeedingBind)> BuildClientPppoeBindingInfoAsync(BillingData data)
+    {
+        var settings = data.Settings;
+
+        if (!string.IsNullOrWhiteSpace(settings.MikrotikHost)
+            && !string.IsNullOrWhiteSpace(settings.MikrotikApiUser)
+            && !string.IsNullOrWhiteSpace(settings.MikrotikApiPassword))
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                var routerClient = new MikrotikRouterOsClient(
+                    settings.MikrotikHost,
+                    settings.MikrotikApiPort <= 0 ? 8728 : settings.MikrotikApiPort,
+                    settings.MikrotikApiUser,
+                    settings.MikrotikApiPassword);
+                var snapshot = await routerClient.GetSnapshotAsync(timeout.Token);
+                return (
+                    BuildClientPppoeStatusesFromSnapshot(data, snapshot),
+                    BuildUnassignedPppoeUsernameOptionsFromSnapshot(data, snapshot),
+                    BuildClientIdsNeedingPppoeBindFromSnapshot(data, snapshot));
+            }
+            catch
+            {
+                // Fall back to the last saved PPPoE sync if the router is unreachable.
+            }
+        }
+
+        return (
+            BuildFallbackClientPppoeStatuses(data),
+            BuildUnassignedPppoeUsernameOptions(data),
+            BuildFallbackClientIdsNeedingPppoeBind(data));
+    }
+
+    private static IReadOnlyDictionary<int, string> BuildClientPppoeStatusesFromSnapshot(BillingData data, MikrotikSnapshot snapshot)
+    {
+        var statuses = data.Clients.ToDictionary(c => c.Id, _ => "DISCONNECTED (EXPIRED)");
+        var activeUsernames = snapshot.ActiveSessions
+            .Select(s => s.Name.Trim())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var secretsByName = snapshot.Secrets
+            .Where(s => !string.IsNullOrWhiteSpace(s.Name))
+            .GroupBy(s => s.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var client in data.Clients.Where(c => !string.IsNullOrWhiteSpace(c.PppoeUsername)))
+        {
+            var username = client.PppoeUsername.Trim();
+            var isActive = activeUsernames.Contains(username)
+                && secretsByName.TryGetValue(username, out var secret)
+                && !secret.Disabled;
+            statuses[client.Id] = isActive ? "ACTIVE" : "DISCONNECTED (EXPIRED)";
+        }
+
+        return statuses;
+    }
+
+    private static IReadOnlyList<string> BuildUnassignedPppoeUsernameOptionsFromSnapshot(BillingData data, MikrotikSnapshot snapshot)
+    {
+        var assignedUsernames = data.Clients
+            .Select(c => c.PppoeUsername?.Trim() ?? "")
+            .Where(username => !string.IsNullOrWhiteSpace(username))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return snapshot.Secrets
+            .Select(secret => secret.Name.Trim())
+            .Where(username => !string.IsNullOrWhiteSpace(username) && !assignedUsernames.Contains(username))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlySet<int> BuildClientIdsNeedingPppoeBindFromSnapshot(BillingData data, MikrotikSnapshot snapshot)
+    {
+        var mikrotikUsernames = snapshot.Secrets
+            .Select(secret => secret.Name.Trim())
+            .Where(username => !string.IsNullOrWhiteSpace(username))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return data.Clients
+            .Where(client =>
+                string.IsNullOrWhiteSpace(client.PppoeUsername)
+                || !mikrotikUsernames.Contains(client.PppoeUsername.Trim()))
+            .Select(client => client.Id)
+            .ToHashSet();
+    }
+
+    private static IReadOnlyDictionary<int, string> BuildFallbackClientPppoeStatuses(BillingData data)
+    {
+        var statuses = data.Clients.ToDictionary(c => c.Id, _ => "DISCONNECTED (EXPIRED)");
+        var pppoeByClientId = data.PppoeUsers
+            .GroupBy(p => p.ClientId)
+            .ToDictionary(g => g.Key, g => g.First());
+        var pppoeByUsername = data.PppoeUsers
+            .Where(p => !string.IsNullOrWhiteSpace(p.Username))
+            .GroupBy(p => p.Username.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var client in data.Clients.Where(c => !string.IsNullOrWhiteSpace(c.PppoeUsername)))
+        {
+            var username = client.PppoeUsername.Trim();
+            pppoeByClientId.TryGetValue(client.Id, out var pppoe);
+            pppoe ??= pppoeByUsername.GetValueOrDefault(username);
+            statuses[client.Id] = NormalizePppoeStatus(pppoe?.Status ?? "") == "Online"
+                ? "ACTIVE"
+                : "DISCONNECTED (EXPIRED)";
+        }
+
+        return statuses;
+    }
+
+    private static IReadOnlySet<int> BuildFallbackClientIdsNeedingPppoeBind(BillingData data)
+    {
+        var knownPppoeUsernames = data.PppoeUsers
+            .Select(p => p.Username.Trim())
+            .Where(username => !string.IsNullOrWhiteSpace(username))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return data.Clients
+            .Where(client =>
+                string.IsNullOrWhiteSpace(client.PppoeUsername)
+                || !knownPppoeUsernames.Contains(client.PppoeUsername.Trim()))
+            .Select(client => client.Id)
+            .ToHashSet();
+    }
+
+    private static string NormalizeClientPppoeStatusFilter(string? status)
+    {
+        var value = status?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        if (value.Equals("Active", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("Online", StringComparison.OrdinalIgnoreCase))
+        {
+            return "ACTIVE";
+        }
+
+        if (value.Equals("DC", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("Expired", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("disconnect", StringComparison.OrdinalIgnoreCase))
+        {
+            return "DISCONNECTED (EXPIRED)";
+        }
+
+        return value;
+    }
+
+    private static bool TryBindClientPppoe(
+        BillingData data,
+        int clientId,
+        string? username,
+        out Client? client,
+        out string message)
+    {
+        client = data.Clients.FirstOrDefault(c => c.Id == clientId);
+        var trimmedUsername = username?.Trim() ?? "";
+
+        if (client is null)
+        {
+            message = "Please select a valid client.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(trimmedUsername))
+        {
+            message = "Please enter or select a PPPoE username.";
+            return false;
+        }
+
+        var duplicateClient = data.Clients.FirstOrDefault(c =>
+            c.Id != clientId
+            && string.Equals(c.PppoeUsername?.Trim(), trimmedUsername, StringComparison.OrdinalIgnoreCase));
+        if (duplicateClient is not null)
+        {
+            message = $"{trimmedUsername} is already bound to {duplicateClient.Name}.";
+            return false;
+        }
+
+        var duplicatePppoe = data.PppoeUsers.FirstOrDefault(p =>
+            p.ClientId != clientId
+            && string.Equals(p.Username?.Trim(), trimmedUsername, StringComparison.OrdinalIgnoreCase));
+        if (duplicatePppoe is not null)
+        {
+            var owner = data.Clients.FirstOrDefault(c => c.Id == duplicatePppoe.ClientId);
+            message = $"{trimmedUsername} is already saved for {(owner?.Name ?? "another client")}.";
+            return false;
+        }
+
+        client.PppoeUsername = trimmedUsername;
+
+        var pppoe = data.PppoeUsers.FirstOrDefault(p => p.ClientId == clientId);
+        if (pppoe is null)
+        {
+            pppoe = new PppoeUser
+            {
+                Id = NextId(data.PppoeUsers.Select(p => p.Id)),
+                ClientId = clientId
+            };
+            data.PppoeUsers.Add(pppoe);
+        }
+
+        var usernameChanged = !string.Equals(pppoe.Username?.Trim(), trimmedUsername, StringComparison.OrdinalIgnoreCase);
+        pppoe.Username = trimmedUsername;
+        if (usernameChanged || string.IsNullOrWhiteSpace(pppoe.Status))
+        {
+            pppoe.Status = "Offline";
+        }
+
+        message = $"{client.Name} is now bound to PPPoE {trimmedUsername}.";
+        return true;
     }
 
     private static void SyncPppoeRowsToStore(BillingData data, IEnumerable<PppoeAccountViewModel> rows)

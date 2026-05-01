@@ -6,6 +6,9 @@
     var billingRules = ViewBag.ClientBillingRules as IReadOnlyDictionary<int, BillingRuleInfo> ?? new Dictionary<int, BillingRuleInfo>();
     var deleteCaptchas = ViewBag.ClientDeleteCaptchas as IReadOnlyDictionary<int, string> ?? new Dictionary<int, string>();
     var referralClients = ViewBag.ReferralClients as IReadOnlyList<Client> ?? Model;
+    var pppoeUsernameOptions = ViewBag.PppoeUsernameOptions as IReadOnlyList<string> ?? Array.Empty<string>();
+    var clientPppoeStatuses = ViewBag.ClientPppoeStatuses as IReadOnlyDictionary<int, string> ?? new Dictionary<int, string>();
+    var clientIdsNeedingPppoeBind = ViewBag.ClientIdsNeedingPppoeBind as IReadOnlySet<int> ?? new HashSet<int>();
     var query = ViewBag.Query as string ?? "";
     var statusFilter = ViewBag.Status as string ?? "";
     var areaFilter = ViewBag.Area as string ?? "";
@@ -90,8 +93,8 @@
                 <label class="form-label">Status</label>
                 <select class="form-select" name="status" id="clientStatusFilter">
                     <option value="">All statuses</option>
-                    <option value="Active" selected="@(statusFilter == "Active")">Active</option>
-                    <option value="DC" selected="@(statusFilter == "DC")">DC</option>
+                    <option value="ACTIVE" selected="@(statusFilter == "ACTIVE")">ACTIVE</option>
+                    <option value="DISCONNECTED" selected="@(statusFilter == "DISCONNECTED (EXPIRED)")">DISCONNECTED (EXPIRED)</option>
                 </select>
             </div>
             <div class="col-md-3 col-lg-2">
@@ -236,8 +239,11 @@
                 <tbody>
                 @foreach (var client in Model)
                 {
-                    var badgeClass = client.Status.Equals("Active", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" :
-                        client.Status.Equals("DC", StringComparison.OrdinalIgnoreCase) ? "bg-red-lt" : "bg-secondary-lt";
+                    var clientPppoeStatus = clientPppoeStatuses.TryGetValue(client.Id, out var pppoeStatus)
+                        ? pppoeStatus
+                        : "DISCONNECTED (EXPIRED)";
+                    var needsPppoeBind = clientIdsNeedingPppoeBind.Contains(client.Id);
+                    var badgeClass = clientPppoeStatus.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" : "bg-red-lt";
                     var typeBadgeClass = client.BillingType.Equals("Prepaid", StringComparison.OrdinalIgnoreCase) ? "bg-blue-lt" :
                         client.BillingType.Equals("Postpaid", StringComparison.OrdinalIgnoreCase) ? "bg-purple-lt" :
                         client.BillingType.Equals("Xentronet", StringComparison.OrdinalIgnoreCase) ? "bg-orange-lt" : "bg-secondary-lt";
@@ -262,11 +268,34 @@
                                 <div class="small text-secondary">PHP @billingRule.EarlyDiscountAmount.ToString("N0") early discount</div>
                             }
                         </td>
-                        <td><span class="badge @badgeClass">@client.Status</span></td>
+                        <td><span class="badge @badgeClass">@clientPppoeStatus</span></td>
                         <td>PHP @client.PlanAmount.ToString("N0")</td>
                         <td>@client.Area</td>
                         <td>@client.Zone</td>
-                        <td><code>@client.PppoeUsername</code></td>
+                        <td>
+                            <div class="d-flex align-items-center gap-1">
+                                @if (!string.IsNullOrWhiteSpace(client.PppoeUsername))
+                                {
+                                    <code>@client.PppoeUsername</code>
+                                }
+                                else
+                                {
+                                    <span class="text-secondary small">No PPPoE</span>
+                                }
+                                @if (needsPppoeBind)
+                                {
+                                    <button class="btn btn-sm btn-outline-primary"
+                                            type="button"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#bindClientPppoeModal"
+                                            data-client-id="@client.Id"
+                                            data-client-account="@client.AccountNumber"
+                                            data-client-name="@client.Name">
+                                        <i class="ti ti-link me-1"></i>Bind
+                                    </button>
+                                }
+                            </div>
+                        </td>
                         <td class="text-end text-nowrap">
                             <button class="btn btn-sm btn-outline-secondary"
                                     type="button"
@@ -490,6 +519,48 @@
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button class="btn btn-primary">
                         <i class="ti ti-device-floppy me-1"></i>Save changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="bindClientPppoeModal" tabindex="-1" aria-labelledby="bindClientPppoeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-action="BindClientPppoeFromClients" method="post">
+                <input type="hidden" name="clientId" id="bindClientPppoeClientId" />
+                <input type="hidden" name="q" value="@query" />
+                <input type="hidden" name="status" value="@statusFilter" />
+                <input type="hidden" name="area" value="@areaFilter" />
+                <input type="hidden" name="type" value="@typeFilter" />
+                <input type="hidden" name="sort" value="@sort" />
+                <div class="modal-header">
+                    <h5 class="modal-title" id="bindClientPppoeModalLabel">Bind PPPoE</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Client</label>
+                        <input class="form-control" id="bindClientPppoeClientName" disabled />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">MikroTik PPPoE username</label>
+                        <input class="form-control" id="bindClientPppoeUsername" name="username" list="clientPppoeUsernameOptions" autocomplete="off" required />
+                        <datalist id="clientPppoeUsernameOptions">
+                            @foreach (var username in pppoeUsernameOptions)
+                            {
+                                <option value="@username"></option>
+                            }
+                        </datalist>
+                        <div class="form-hint">Select an unassigned MikroTik PPPoE secret, or type the exact MikroTik username.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-primary">
+                        <i class="ti ti-link me-1"></i>Bind PPPoE
                     </button>
                 </div>
             </form>
@@ -766,6 +837,20 @@
                 if (installedDisplay) {
                     installedDisplay.value = button.dataset.clientInstalled || "";
                 }
+            });
+
+            const bindPppoeModal = document.getElementById("bindClientPppoeModal");
+            bindPppoeModal.addEventListener("show.bs.modal", function (event) {
+                const button = event.relatedTarget;
+                if (!button) {
+                    return;
+                }
+
+                document.getElementById("bindClientPppoeClientId").value = button.dataset.clientId || "";
+                document.getElementById("bindClientPppoeClientName").value = button.dataset.clientAccount
+                    ? `${button.dataset.clientAccount} - ${button.dataset.clientName || ""}`
+                    : button.dataset.clientName || "";
+                document.getElementById("bindClientPppoeUsername").value = button.dataset.clientPppoe || "";
             });
 
             const deleteModal = document.getElementById("deleteClientModal");

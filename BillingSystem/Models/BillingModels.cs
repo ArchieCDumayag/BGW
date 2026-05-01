@@ -548,6 +548,8 @@ public sealed class PppoeManagementViewModel
     public string Filter { get; init; } = "All";
     public int Show { get; init; } = 25;
     public IReadOnlyList<PppoeAccountViewModel> Accounts { get; init; } = [];
+    public IReadOnlyList<Client> ClientsWithoutPppoe { get; init; } = [];
+    public IReadOnlyList<string> PppoeUsernames { get; init; } = [];
 }
 
 public sealed record PppoeAccountViewModel
@@ -562,6 +564,7 @@ public sealed record PppoeAccountViewModel
     public string Profile { get; init; } = "";
     public string LastSeen { get; init; } = "";
     public string Status { get; init; } = "";
+    public string ClientStatus { get; init; } = "";
     public decimal UsageGb { get; init; }
     public bool IsAssigned { get; init; }
 }

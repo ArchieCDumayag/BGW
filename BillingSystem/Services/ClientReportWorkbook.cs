@@ -16,7 +16,7 @@ public static class ClientReportWorkbook
     public static byte[] Create(BillingData data, DateOnly startMonth, DateOnly endMonth)
     {
         var months = GetMonths(startMonth, endMonth).ToList();
-        var sheetNames = new[] { "CLIENT LIST" }
+        var sheetNames = new[] { "CLIENTS LIST" }
             .Concat(months.Select(month => $"BILLS {month:MMMyyyy}".ToUpperInvariant()))
             .ToList();
 
