@@ -7,7 +7,6 @@
     var deleteCaptchas = ViewBag.ClientDeleteCaptchas as IReadOnlyDictionary<int, string> ?? new Dictionary<int, string>();
     var referralClients = ViewBag.ReferralClients as IReadOnlyList<Client> ?? Model;
     var pppoeUsernameOptions = ViewBag.PppoeUsernameOptions as IReadOnlyList<string> ?? Array.Empty<string>();
-    var clientPppoeStatuses = ViewBag.ClientPppoeStatuses as IReadOnlyDictionary<int, string> ?? new Dictionary<int, string>();
     var clientIdsNeedingPppoeBind = ViewBag.ClientIdsNeedingPppoeBind as IReadOnlySet<int> ?? new HashSet<int>();
     var query = ViewBag.Query as string ?? "";
     var statusFilter = ViewBag.Status as string ?? "";
@@ -47,6 +46,31 @@
         }
 
         return "ti ti-arrows-sort ms-1 text-secondary";
+    }
+
+    string ClientStatusLabel(Client client)
+    {
+        var value = client.Status?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(value) || value.Equals("Active", StringComparison.OrdinalIgnoreCase) || value.Equals("Online", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Active";
+        }
+
+        return value.Equals("DC", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("CUT", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("Expired", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("disconnect", StringComparison.OrdinalIgnoreCase)
+            ? "DC"
+            : value;
+    }
+
+    string ClientStatusBadgeClass(string status)
+    {
+        return status.Equals("Active", StringComparison.OrdinalIgnoreCase)
+            ? "bg-green-lt"
+            : status.Equals("DC", StringComparison.OrdinalIgnoreCase)
+                ? "bg-red-lt"
+                : "bg-secondary-lt";
     }
 }
 
@@ -93,8 +117,8 @@
                 <label class="form-label">Status</label>
                 <select class="form-select" name="status" id="clientStatusFilter">
                     <option value="">All statuses</option>
-                    <option value="ACTIVE" selected="@(statusFilter == "ACTIVE")">ACTIVE</option>
-                    <option value="DISCONNECTED" selected="@(statusFilter == "DISCONNECTED (EXPIRED)")">DISCONNECTED (EXPIRED)</option>
+                    <option value="Active" selected="@(statusFilter == "Active")">Active</option>
+                    <option value="DC" selected="@(statusFilter == "DC")">DC</option>
                 </select>
             </div>
             <div class="col-md-3 col-lg-2">
@@ -239,11 +263,9 @@
                 <tbody>
                 @foreach (var client in Model)
                 {
-                    var clientPppoeStatus = clientPppoeStatuses.TryGetValue(client.Id, out var pppoeStatus)
-                        ? pppoeStatus
-                        : "DISCONNECTED (EXPIRED)";
+                    var clientStatus = ClientStatusLabel(client);
                     var needsPppoeBind = clientIdsNeedingPppoeBind.Contains(client.Id);
-                    var badgeClass = clientPppoeStatus.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" : "bg-red-lt";
+                    var badgeClass = ClientStatusBadgeClass(clientStatus);
                     var typeBadgeClass = client.BillingType.Equals("Prepaid", StringComparison.OrdinalIgnoreCase) ? "bg-blue-lt" :
                         client.BillingType.Equals("Postpaid", StringComparison.OrdinalIgnoreCase) ? "bg-purple-lt" :
                         client.BillingType.Equals("Xentronet", StringComparison.OrdinalIgnoreCase) ? "bg-orange-lt" : "bg-secondary-lt";
@@ -268,7 +290,7 @@
                                 <div class="small text-secondary">PHP @billingRule.EarlyDiscountAmount.ToString("N0") early discount</div>
                             }
                         </td>
-                        <td><span class="badge @badgeClass">@clientPppoeStatus</span></td>
+                        <td><span class="badge @badgeClass">@clientStatus</span></td>
                         <td>PHP @client.PlanAmount.ToString("N0")</td>
                         <td>@client.Area</td>
                         <td>@client.Zone</td>
@@ -305,7 +327,7 @@
                                     data-client-account="@client.AccountNumber"
                                     data-client-installed="@installedOn"
                                     data-client-name="@client.Name"
-                                    data-client-status="@client.Status"
+                                    data-client-status="@clientStatus"
                                     data-client-type="@client.BillingType"
                                     data-client-plan="@planAmount"
                                     data-client-area="@client.Area"

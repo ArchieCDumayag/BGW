@@ -181,11 +181,7 @@ public static partial class ClientListExcelImporter
             var area = Text(Get(row, headers, "Area"));
             var zone = Text(Get(row, headers, "Zone"));
             var facebook = Text(Get(row, headers, "FACEBOOK"));
-            var status = Text(Get(row, headers, "Status"));
-            if (string.IsNullOrWhiteSpace(status))
-            {
-                status = Text(Get(row, headers, "Active"));
-            }
+            var status = ImportedClientStatus(Text(GetAny(row, headers, "Status", "Active", "Mode")));
             var billingType = BillingTypeValue(GetAny(row, headers, "Type", "Billing Type", "BillingType", "Account Type"));
             var dateInstalled = DateValue(GetAny(row, headers, "Date Installed", "Date", "Installed", "Installation Date"));
             var planAmount = Money(Get(row, headers, "Plan"));
@@ -206,7 +202,7 @@ public static partial class ClientListExcelImporter
                 Id = assignedId,
                 AccountNumber = string.IsNullOrWhiteSpace(accountNumber) ? assignedId.ToString(CultureInfo.InvariantCulture) : accountNumber,
                 DateInstalled = dateInstalled,
-                Status = string.IsNullOrWhiteSpace(status) ? "Active" : status,
+                Status = status,
                 BillingType = billingType,
                 PlanAmount = planAmount,
                 Area = area,
@@ -464,7 +460,7 @@ public static partial class ClientListExcelImporter
             var status = Text(Cell(row, HeaderColumn(headers, "STATUS")));
             if (!string.IsNullOrWhiteSpace(status))
             {
-                client.Status = status;
+                client.Status = ImportedClientStatus(status);
             }
 
             var billColumn = HeaderColumn(headers, "BILLS");
@@ -640,6 +636,24 @@ public static partial class ClientListExcelImporter
         return status.Equals("DC", StringComparison.OrdinalIgnoreCase)
             || status.Equals("CUT", StringComparison.OrdinalIgnoreCase)
             || status.Equals("DISCONNECTED", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ImportedClientStatus(string status)
+    {
+        var value = status.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Active";
+        }
+
+        if (value.Equals("Active", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Active";
+        }
+
+        return IsDisconnectedStatus(value) || value.Contains("disconnect", StringComparison.OrdinalIgnoreCase)
+            ? "DC"
+            : value;
     }
 
     private static string BillingTypeValue(object? value)

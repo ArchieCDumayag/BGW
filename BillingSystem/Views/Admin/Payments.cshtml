@@ -4,11 +4,35 @@
     var clients = ViewBag.Clients as IReadOnlyList<Client> ?? Array.Empty<Client>();
     var billingRules = ViewBag.ClientBillingRules as IReadOnlyDictionary<int, BillingRuleInfo> ?? new Dictionary<int, BillingRuleInfo>();
     var currentBills = ViewBag.ClientCurrentBills as IReadOnlyDictionary<int, decimal> ?? new Dictionary<int, decimal>();
-    var clientPppoeStatuses = ViewBag.ClientPppoeStatuses as IReadOnlyDictionary<int, string> ?? new Dictionary<int, string>();
     var invariantCulture = System.Globalization.CultureInfo.InvariantCulture;
     var selectedMonthValue = ViewBag.SelectedMonthValue as string ?? DateTime.Today.ToString("yyyy-MM");
     var selectedMonthLabel = ViewBag.SelectedMonthLabel as string ?? DateTime.Today.ToString("MMMM yyyy");
     var collectorName = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
+
+    string ClientStatusLabel(Client client)
+    {
+        var value = client.Status?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(value) || value.Equals("Active", StringComparison.OrdinalIgnoreCase) || value.Equals("Online", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Active";
+        }
+
+        return value.Equals("DC", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("CUT", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("Expired", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("disconnect", StringComparison.OrdinalIgnoreCase)
+            ? "DC"
+            : value;
+    }
+
+    string ClientStatusBadgeClass(string status)
+    {
+        return status.Equals("Active", StringComparison.OrdinalIgnoreCase)
+            ? "bg-green-lt"
+            : status.Equals("DC", StringComparison.OrdinalIgnoreCase)
+                ? "bg-red-lt"
+                : "bg-secondary-lt";
+    }
 }
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -173,15 +197,11 @@
                     var statusClass = row.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" :
                         row.Status.Equals("Partial", StringComparison.OrdinalIgnoreCase) ? "bg-yellow-lt" :
                         row.Status.Equals("Unpaid", StringComparison.OrdinalIgnoreCase) ? "bg-red-lt" : "bg-secondary-lt";
-                    var clientPppoeStatus = clientPppoeStatuses.TryGetValue(client.Id, out var pppoeStatus)
-                        ? pppoeStatus
-                        : "DISCONNECTED (EXPIRED)";
-                    var clientStatusClass = clientPppoeStatus.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase)
-                        ? "bg-green-lt"
-                        : "bg-red-lt";
+                    var clientStatus = ClientStatusLabel(client);
+                    var clientStatusClass = ClientStatusBadgeClass(clientStatus);
                     <tr class="payment-current-bill-row"
                         data-customer-account-url="@Url.Action("CustomerAccount", new { id = client.Id })"
-                        data-search="@($"{client.AccountNumber} {client.Name} {client.PppoeUsername} {client.BillingType} {clientPppoeStatus} {row.DueDate:MMM dd, yyyy} {row.ReferralNames} {row.Status}")"
+                        data-search="@($"{client.AccountNumber} {client.Name} {client.PppoeUsername} {client.BillingType} {clientStatus} {row.DueDate:MMM dd, yyyy} {row.ReferralNames} {row.Status}")"
                         tabindex="0"
                         role="link"
                         title="Open customer account">
@@ -191,7 +211,7 @@
                             <div class="small text-secondary">@client.PppoeUsername</div>
                         </td>
                         <td>@client.BillingType</td>
-                        <td><span class="badge @clientStatusClass">@clientPppoeStatus</span></td>
+                        <td><span class="badge @clientStatusClass">@clientStatus</span></td>
                         <td>@row.DueDate.ToString("MMM dd, yyyy")</td>
                         <td class="text-end">@(row.PreviousBalance > 0 ? $"PHP {row.PreviousBalance:N0}" : "-")</td>
                         <td class="text-end">@(row.Advance > 0 ? $"PHP {row.Advance:N0}" : "-")</td>

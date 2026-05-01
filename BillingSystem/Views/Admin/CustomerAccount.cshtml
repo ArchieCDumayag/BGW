@@ -316,12 +316,10 @@
                 <thead class="table-light">
                     <tr>
                         <th>Month</th>
-                        <th>Due date</th>
                         <th class="text-end">Balance</th>
                         <th class="text-end">Advance</th>
                         <th class="text-end">Current bill</th>
                         <th class="text-end">Total paid</th>
-                        <th>Billing breakdown</th>
                         <th>Method</th>
                         <th>Reference</th>
                         <th>Remarks</th>
@@ -335,9 +333,11 @@
                     var billAmountValue = bill.BillAmount.ToString("0.##", invariantCulture);
                     var discountedBillValue = Math.Max(0, bill.BillAmount - BillingSystem.Services.BillingRules.XentronetEarlyDiscount).ToString("0.##", invariantCulture);
                     var discountAppliedValue = bill.DiscountAmount.ToString("0.##", invariantCulture);
+                    var paymentBreakdownTooltip = bill.PaymentBreakdown.Count == 0
+                        ? "No payment breakdown"
+                        : string.Join(" | ", bill.PaymentBreakdown.Select(payment => $"{payment.PaidOn:MMM dd, yyyy}: PHP {payment.Amount:N0}"));
                     <tr>
                         <td class="fw-medium">@bill.MonthLabel</td>
-                        <td>@bill.DueDate.ToString("MMM dd, yyyy")</td>
                         <td class="text-end">PHP @bill.Balance.ToString("N0")</td>
                         <td class="text-end">@(bill.Advance > 0 ? $"PHP {bill.Advance:N0}" : "-")</td>
                         <td class="text-end">
@@ -371,26 +371,20 @@
                                 </div>
                             }
                         </td>
-                        <td class="text-end">PHP @bill.AmountPaid.ToString("N0")</td>
-                        <td>
-                            @if (bill.PaymentBreakdown.Count == 0)
-                            {
-                                <span>-</span>
-                            }
-                            else
-                            {
-                                foreach (var payment in bill.PaymentBreakdown)
-                                {
-                                    <div class="d-flex justify-content-between gap-3">
-                                        <span>@payment.PaidOn.ToString("MMM dd, yyyy")</span>
-                                        <span class="fw-semibold text-nowrap">PHP @payment.Amount.ToString("N0")</span>
-                                    </div>
-                                }
-                            }
+                        <td class="text-end">
+                            <span class="text-decoration-underline text-decoration-dotted"
+                                  tabindex="0"
+                                  data-bs-toggle="tooltip"
+                                  data-bs-trigger="hover focus"
+                                  data-bs-placement="top"
+                                  data-bs-title="@paymentBreakdownTooltip"
+                                  aria-label="Billing breakdown for @bill.MonthLabel">
+                                PHP @bill.AmountPaid.ToString("N0")
+                            </span>
                         </td>
                         <td>@bill.Methods</td>
                         <td>@bill.References</td>
-                        <td>@bill.Remarks</td>
+                        <td class="small text-secondary">@bill.Remarks</td>
                         <td>@bill.Collectors</td>
                     </tr>
                 }
@@ -403,6 +397,12 @@
 @section Scripts {
     <script>
         document.addEventListener("DOMContentLoaded", function () {
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (element) {
+                if (window.bootstrap && window.bootstrap.Tooltip) {
+                    new bootstrap.Tooltip(element);
+                }
+            });
+
             const paymentDate = document.getElementById("customerPaymentDate");
             const amountInput = document.getElementById("customerPaymentAmount");
             const info = document.getElementById("customerPaymentRuleInfo");

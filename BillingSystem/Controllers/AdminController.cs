@@ -79,9 +79,8 @@ public sealed class AdminController(
     {
         var data = await store.GetAsync();
         var pppoeBindingInfo = await BuildClientPppoeBindingInfoAsync(data);
-        var clientPppoeStatuses = pppoeBindingInfo.Statuses;
         var clients = data.Clients.AsEnumerable();
-        var selectedStatus = NormalizeClientPppoeStatusFilter(status);
+        var selectedStatus = NormalizeClientStatusFilter(status);
 
         if (!string.IsNullOrWhiteSpace(q))
         {
@@ -92,9 +91,7 @@ public sealed class AdminController(
 
         if (!string.IsNullOrWhiteSpace(selectedStatus))
         {
-            clients = clients.Where(c =>
-                clientPppoeStatuses.TryGetValue(c.Id, out var pppoeStatus)
-                && pppoeStatus.Equals(selectedStatus, StringComparison.OrdinalIgnoreCase));
+            clients = clients.Where(c => NormalizeClientStatus(c.Status).Equals(selectedStatus, StringComparison.OrdinalIgnoreCase));
         }
 
         if (!string.IsNullOrWhiteSpace(area))
@@ -119,12 +116,7 @@ public sealed class AdminController(
         ViewBag.NextAccountNumber = NextAccountNumber(data.Clients);
         ViewBag.ReferralClients = data.Clients.OrderBy(c => c.Name ?? "").ThenBy(c => AccountSortKey(c.AccountNumber)).ToList();
         ViewBag.PppoeUsernameOptions = pppoeBindingInfo.UnassignedUsernames;
-        ViewBag.ClientPppoeStatuses = clientPppoeStatuses;
         ViewBag.ClientIdsNeedingPppoeBind = pppoeBindingInfo.ClientIdsNeedingBind;
-
-        string ClientPppoeStatusForSort(Client client) => clientPppoeStatuses.TryGetValue(client.Id, out var pppoeStatus)
-            ? pppoeStatus
-            : "DISCONNECTED (EXPIRED)";
 
         clients = sort switch
         {
@@ -134,8 +126,8 @@ public sealed class AdminController(
             "name-desc" => clients.OrderByDescending(c => c.Name ?? ""),
             "type" => clients.OrderBy(c => c.BillingType ?? "").ThenBy(c => c.Name ?? ""),
             "type-desc" => clients.OrderByDescending(c => c.BillingType ?? "").ThenBy(c => c.Name ?? ""),
-            "status" => clients.OrderBy(ClientPppoeStatusForSort).ThenBy(c => c.Name ?? ""),
-            "status-desc" => clients.OrderByDescending(ClientPppoeStatusForSort).ThenBy(c => c.Name ?? ""),
+            "status" => clients.OrderBy(c => NormalizeClientStatus(c.Status)).ThenBy(c => c.Name ?? ""),
+            "status-desc" => clients.OrderByDescending(c => NormalizeClientStatus(c.Status)).ThenBy(c => c.Name ?? ""),
             "plan" => clients.OrderBy(c => c.PlanAmount).ThenBy(c => c.Name ?? ""),
             "plan-desc" => clients.OrderByDescending(c => c.PlanAmount).ThenBy(c => c.Name ?? ""),
             "area" => clients.OrderBy(c => c.Area ?? "").ThenBy(c => c.Zone ?? "").ThenBy(c => c.Name ?? ""),
@@ -564,7 +556,7 @@ public sealed class AdminController(
             client.Id = NextId(data.Clients.Select(c => c.Id));
             client.AccountNumber = NextAccountNumber(data.Clients);
             client.DateInstalled ??= DateOnly.FromDateTime(DateTime.Today);
-            client.Status = string.IsNullOrWhiteSpace(client.Status) ? "Active" : client.Status;
+            client.Status = NormalizeClientStatus(client.Status);
             client.BillingType = BillingRules.NormalizeBillingType(client.BillingType);
             client.Referral = ReferralBillingService.NormalizeReferralText(client.Referral);
             client.Bills = BillingRules.ProratedFirstBill(client.PlanAmount, client.DateInstalled.Value, client.BillingType);
@@ -598,7 +590,7 @@ public sealed class AdminController(
             existing.AccountNumber = client.AccountNumber;
             existing.DateInstalled = client.DateInstalled;
             existing.Name = client.Name;
-            existing.Status = client.Status;
+            existing.Status = NormalizeClientStatus(client.Status);
             existing.BillingType = BillingRules.NormalizeBillingType(client.BillingType);
             if (existing.PlanAmount != client.PlanAmount)
             {
@@ -703,7 +695,6 @@ public sealed class AdminController(
         ViewBag.ClientMap = data.Clients.ToDictionary(c => c.Id);
         ViewBag.ClientBillingRules = data.Clients.ToDictionary(c => c.Id, c => BillingRules.ForClient(c));
         ViewBag.ClientCurrentBills = CurrentBillAmountsForMonth(data, selectedMonth);
-        ViewBag.ClientPppoeStatuses = (await BuildClientPppoeBindingInfoAsync(data)).Statuses;
         ViewBag.SelectedMonthValue = selectedMonth.ToString("yyyy-MM", CultureInfo.InvariantCulture);
         ViewBag.SelectedMonthLabel = selectedMonth.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
         return View(BuildClientCurrentBillRows(data, selectedMonth));
@@ -2252,25 +2243,31 @@ public sealed class AdminController(
             .ToHashSet();
     }
 
-    private static string NormalizeClientPppoeStatusFilter(string? status)
+    private static string NormalizeClientStatusFilter(string? status)
+    {
+        return string.IsNullOrWhiteSpace(status) ? "" : NormalizeClientStatus(status);
+    }
+
+    private static string NormalizeClientStatus(string? status)
     {
         var value = status?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(value))
         {
-            return "";
+            return "Active";
         }
 
         if (value.Equals("Active", StringComparison.OrdinalIgnoreCase)
             || value.Equals("Online", StringComparison.OrdinalIgnoreCase))
         {
-            return "ACTIVE";
+            return "Active";
         }
 
         if (value.Equals("DC", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("CUT", StringComparison.OrdinalIgnoreCase)
             || value.Equals("Expired", StringComparison.OrdinalIgnoreCase)
             || value.Contains("disconnect", StringComparison.OrdinalIgnoreCase))
         {
-            return "DISCONNECTED (EXPIRED)";
+            return "DC";
         }
 
         return value;
