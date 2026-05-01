@@ -7,6 +7,7 @@
     var invariantCulture = System.Globalization.CultureInfo.InvariantCulture;
     var selectedMonthValue = ViewBag.SelectedMonthValue as string ?? DateTime.Today.ToString("yyyy-MM");
     var selectedMonthLabel = ViewBag.SelectedMonthLabel as string ?? DateTime.Today.ToString("MMMM yyyy");
+    var collectorName = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
 }
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -15,63 +16,114 @@
         <p class="text-body-secondary mb-0">Record cash, GCash, bank, and collector payments.</p>
     </div>
     <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-outline-primary" asp-action="DownloadPaymentsSummary">
-            <i class="ti ti-download me-1"></i>Download summary
-        </a>
+        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#monthlyReportModal">
+            <i class="ti ti-file-spreadsheet me-1"></i>Monthly report
+        </button>
+        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#summaryReportModal">
+            <i class="ti ti-download me-1"></i>Summary
+        </button>
+        <button class="btn btn-sm btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#addPaymentModal">
+            <i class="ti ti-plus me-1"></i>Add payment
+        </button>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-body">
-        <form asp-action="DownloadMonthlyPayments" method="get" class="row g-2 align-items-end">
-            <div class="col-sm-3 col-lg-2">
+<div class="modal fade" id="monthlyReportModal" tabindex="-1" aria-labelledby="monthlyReportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <form asp-action="DownloadMonthlyPayments" method="get" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="monthlyReportModalLabel">Monthly report</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
                 <label class="form-label">Month</label>
                 <input class="form-control" type="month" name="month" value="@selectedMonthValue" />
             </div>
-            <div class="col-sm-6 col-lg-3">
-                <button class="btn btn-primary w-100">
-                    <i class="ti ti-file-spreadsheet me-1"></i>Download monthly report
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-sm btn-primary">
+                    <i class="ti ti-file-spreadsheet me-1"></i>Download
                 </button>
             </div>
         </form>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-header bg-white fw-semibold">Add payment</div>
-    <div class="card-body">
-        <form asp-action="AddPayment" method="post" class="row g-3">
-            <div class="col-lg-4">
-                <label class="form-label">Client</label>
-                <select class="form-select" id="paymentClient" name="ClientId" required>
-                    <option value="">Choose client</option>
-                    @foreach (var client in clients)
-                    {
-                        billingRules.TryGetValue(client.Id, out var rule);
-                        var currentBill = currentBills.TryGetValue(client.Id, out var billAmount) ? billAmount : client.Bills;
-                        <option value="@client.Id"
-                                data-billing-type="@(rule?.BillingType ?? client.BillingType)"
-                                data-schedule="@(rule?.ScheduleLabel ?? "")"
-                                data-due="@(rule?.NextDueDate.ToString("MMM dd, yyyy") ?? "")"
-                                data-current-bill="@currentBill.ToString("0.##", invariantCulture)"
-                                data-has-discount="@((rule?.HasEarlyDiscount == true).ToString().ToLowerInvariant())"
-                                data-discount="@((rule?.EarlyDiscountAmount ?? 0).ToString("0.##"))"
-                                data-deadline="@(rule?.DiscountDeadline?.ToString("MMM dd, yyyy") ?? "")"
-                                data-deadline-iso="@(rule?.DiscountDeadline?.ToString("yyyy-MM-dd") ?? "")">
-                            @client.Name - @client.PppoeUsername
-                        </option>
-                    }
-                </select>
+<div class="modal fade" id="summaryReportModal" tabindex="-1" aria-labelledby="summaryReportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <form asp-action="DownloadPaymentsSummary" method="get" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="summaryReportModalLabel">Payment summary</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="col-md-2"><label class="form-label">Date</label><input class="form-control" id="paymentDate" name="PaidOn" type="date" value="@DateTime.Today.ToString("yyyy-MM-dd")" /></div>
-            <div class="col-md-2"><label class="form-label">Amount</label><input class="form-control" id="paymentAmount" name="Amount" type="number" step="0.01" required /></div>
-            <div class="col-md-2"><label class="form-label">Method</label><select class="form-select" name="Method"><option>Cash</option><option>GCash</option><option>Bank</option></select></div>
-            <div class="col-md-2 d-grid"><button class="btn btn-primary mt-md-4">Add payment</button></div>
-            <div class="col-md-4"><label class="form-label">Reference number</label><input class="form-control" name="ReferenceNumber" /></div>
-            <div class="col-md-4"><label class="form-label">Collected by</label><input class="form-control" name="CollectedBy" /></div>
-            <div class="col-md-4"><label class="form-label">Remarks</label><input class="form-control" name="Remarks" /></div>
-            <div class="col-12">
-                <div id="billingRuleInfo" class="alert alert-info d-none mb-0" role="alert"></div>
+            <div class="modal-body">
+                <p class="mb-0 text-secondary">Download the full payment summary workbook.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-sm btn-primary">
+                    <i class="ti ti-download me-1"></i>Download
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="addPaymentModal" tabindex="-1" aria-labelledby="addPaymentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <form asp-action="AddPayment" method="post" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addPaymentModalLabel">Add payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-lg-4">
+                        <label class="form-label">Client</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="ti ti-search"></i></span>
+                            <input class="form-control" id="paymentClientSearch" type="search" list="paymentClientSuggestions" placeholder="Search client name" autocomplete="off" required />
+                        </div>
+                        <input type="hidden" id="paymentClientId" name="ClientId" />
+                        <datalist id="paymentClientSuggestions">
+                            @foreach (var client in clients)
+                            {
+                                billingRules.TryGetValue(client.Id, out var rule);
+                                var currentBill = currentBills.TryGetValue(client.Id, out var billAmount) ? billAmount : client.Bills;
+                                <option value="@($"{client.Name} - {client.PppoeUsername} - #{client.AccountNumber}")"
+                                        data-client-id="@client.Id"
+                                        data-billing-type="@(rule?.BillingType ?? client.BillingType)"
+                                        data-client-search="@($"{client.Name} {client.AccountNumber} {client.PppoeUsername}")"
+                                        data-schedule="@(rule?.ScheduleLabel ?? "")"
+                                        data-due="@(rule?.NextDueDate.ToString("MMM dd, yyyy") ?? "")"
+                                        data-current-bill="@currentBill.ToString("0.##", invariantCulture)"
+                                        data-has-discount="@((rule?.HasEarlyDiscount == true).ToString().ToLowerInvariant())"
+                                        data-discount="@((rule?.EarlyDiscountAmount ?? 0).ToString("0.##"))"
+                                        data-deadline="@(rule?.DiscountDeadline?.ToString("MMM dd, yyyy") ?? "")"
+                                        data-deadline-iso="@(rule?.DiscountDeadline?.ToString("yyyy-MM-dd") ?? "")"></option>
+                            }
+                        </datalist>
+                    </div>
+                    <div class="col-md-2"><label class="form-label">Date</label><input class="form-control" id="paymentDate" name="PaidOn" type="date" value="@DateTime.Today.ToString("yyyy-MM-dd")" /></div>
+                    <div class="col-md-2"><label class="form-label">Amount</label><input class="form-control" id="paymentAmount" name="Amount" type="number" step="0.01" required /></div>
+                    <div class="col-md-2"><label class="form-label">Method</label><select class="form-select" name="Method"><option>Cash</option><option>GCash</option><option>Bank</option></select></div>
+                    <div class="col-md-4"><label class="form-label">Reference number</label><input class="form-control" name="ReferenceNumber" /></div>
+                    <div class="col-md-4"><label class="form-label">Collected by</label><input class="form-control" name="CollectedBy" value="@collectorName" readonly /></div>
+                    <div class="col-md-4"><label class="form-label">Remarks</label><input class="form-control" name="Remarks" /></div>
+                    <div class="col-12">
+                        <div id="billingRuleInfo" class="alert alert-info d-none mb-0" role="alert"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="form-check me-auto">
+                    <input class="form-check-input" id="printThermalAfterPayment" name="printThermal" type="checkbox" value="true" />
+                    <label class="form-check-label" for="printThermalAfterPayment">Print thermal after saving</label>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-sm btn-primary">
+                    <i class="ti ti-plus me-1"></i>Add payment
+                </button>
             </div>
         </form>
     </div>
@@ -83,10 +135,16 @@
             <span class="fw-semibold">CLIENT LIST</span>
             <span class="badge text-bg-light border ms-2">@selectedMonthLabel</span>
         </div>
-        <form asp-action="Payments" method="get" class="d-flex align-items-center gap-2">
-            <label class="small text-secondary mb-0" for="recordsMonth">Month</label>
-            <input class="form-control form-control-sm" id="recordsMonth" type="month" name="month" value="@selectedMonthValue" onchange="this.form.submit()" />
-        </form>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="input-group input-group-sm" style="max-width: 260px;">
+                <span class="input-group-text"><i class="ti ti-search"></i></span>
+                <input class="form-control" id="paymentSearchInput" type="search" placeholder="Search payment" autocomplete="off" />
+            </div>
+            <form asp-action="Payments" method="get" class="d-flex align-items-center gap-2">
+                <label class="small text-secondary mb-0" for="recordsMonth">Month</label>
+                <input class="form-control form-control-sm" id="recordsMonth" type="month" name="month" value="@selectedMonthValue" onchange="this.form.submit()" />
+            </form>
+        </div>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -115,6 +173,7 @@
                         row.Status.Equals("Unpaid", StringComparison.OrdinalIgnoreCase) ? "bg-red-lt" : "bg-secondary-lt";
                     <tr class="payment-current-bill-row"
                         data-customer-account-url="@Url.Action("CustomerAccount", new { id = client.Id })"
+                        data-search="@($"{client.AccountNumber} {client.Name} {client.PppoeUsername} {client.BillingType} {row.DueDate:MMM dd, yyyy} {row.ReferralNames} {row.Status}")"
                         tabindex="0"
                         role="link"
                         title="Open customer account">
@@ -127,7 +186,20 @@
                         <td>@row.DueDate.ToString("MMM dd, yyyy")</td>
                         <td class="text-end">@(row.PreviousBalance > 0 ? $"PHP {row.PreviousBalance:N0}" : "-")</td>
                         <td class="text-end">@(row.Advance > 0 ? $"PHP {row.Advance:N0}" : "-")</td>
-                        <td class="text-end">@(row.ReferralDiscount > 0 ? $"PHP {row.ReferralDiscount:N0}" : "-")</td>
+                        <td class="text-end">
+                            @if (row.ReferralDiscount > 0 || !string.IsNullOrWhiteSpace(row.ReferralNames))
+                            {
+                                <div>@(row.ReferralDiscount > 0 ? $"PHP {row.ReferralDiscount:N0}" : "-")</div>
+                                @if (!string.IsNullOrWhiteSpace(row.ReferralNames))
+                                {
+                                    <div class="small text-secondary">@row.ReferralNames</div>
+                                }
+                            }
+                            else
+                            {
+                                <span>-</span>
+                            }
+                        </td>
                         <td class="text-end">PHP @row.CurrentBill.ToString("N0")</td>
                         <td class="text-end">@(row.PaidThisMonth > 0 ? $"PHP {row.PaidThisMonth:N0}" : "-")</td>
                         <td class="text-end">@(row.Balance > 0 ? $"PHP {row.Balance:N0}" : "-")</td>
@@ -143,13 +215,18 @@
 @section Scripts {
     <script>
         document.addEventListener("DOMContentLoaded", function () {
-            const clientSelect = document.getElementById("paymentClient");
+            const addPaymentForm = document.querySelector("#addPaymentModal form");
+            const clientInput = document.getElementById("paymentClientSearch");
+            const clientIdInput = document.getElementById("paymentClientId");
+            const clientOptions = Array.from(document.querySelectorAll("#paymentClientSuggestions option"));
             const paymentDate = document.getElementById("paymentDate");
             const amountInput = document.getElementById("paymentAmount");
             const info = document.getElementById("billingRuleInfo");
+            const searchInput = document.getElementById("paymentSearchInput");
+            const paymentRows = Array.from(document.querySelectorAll(".payment-current-bill-row"));
             let lastSuggestedAmount = "";
 
-            document.querySelectorAll(".payment-current-bill-row").forEach(function (row) {
+            paymentRows.forEach(function (row) {
                 row.style.cursor = "pointer";
 
                 row.addEventListener("click", function (event) {
@@ -174,13 +251,55 @@
                 });
             });
 
+            function normalizeText(value) {
+                return (value || "").toString().toLowerCase().trim();
+            }
+
+            if (searchInput) {
+                searchInput.addEventListener("input", function () {
+                    const query = normalizeText(searchInput.value);
+                    paymentRows.forEach(function (row) {
+                        const searchText = normalizeText(row.dataset.search || row.textContent);
+                        row.classList.toggle("d-none", query.length > 0 && !searchText.includes(query));
+                    });
+                });
+            }
+
+            function selectedClientOption() {
+                if (!clientInput) {
+                    return null;
+                }
+
+                const inputValue = normalizeText(clientInput.value);
+                return clientOptions.find(function (option) {
+                    return normalizeText(option.value) === inputValue;
+                }) || null;
+            }
+
+            function syncSelectedClient() {
+                const selected = selectedClientOption();
+                if (clientIdInput) {
+                    clientIdInput.value = selected?.dataset.clientId || "";
+                }
+
+                if (clientInput) {
+                    clientInput.setCustomValidity(clientInput.value && !selected ? "Choose a client from the suggestions." : "");
+                }
+
+                updateBillingRuleInfo();
+            }
+
             function money(value) {
                 return new Intl.NumberFormat("en-PH", { maximumFractionDigits: 0 }).format(Number(value || 0));
             }
 
             function updateBillingRuleInfo() {
-                const selected = clientSelect.options[clientSelect.selectedIndex];
-                if (!selected || !selected.value) {
+                if (!clientInput || !paymentDate || !amountInput || !info) {
+                    return;
+                }
+
+                const selected = selectedClientOption();
+                if (!selected) {
                     info.className = "alert alert-info d-none mb-0";
                     info.textContent = "";
                     return;
@@ -208,8 +327,16 @@
                 }
             }
 
-            clientSelect.addEventListener("change", updateBillingRuleInfo);
-            paymentDate.addEventListener("change", updateBillingRuleInfo);
+            clientInput?.addEventListener("input", syncSelectedClient);
+            clientInput?.addEventListener("change", syncSelectedClient);
+            paymentDate?.addEventListener("change", updateBillingRuleInfo);
+            addPaymentForm?.addEventListener("submit", function (event) {
+                syncSelectedClient();
+                if (!clientIdInput?.value) {
+                    event.preventDefault();
+                    clientInput?.reportValidity();
+                }
+            });
             updateBillingRuleInfo();
         });
     </script>

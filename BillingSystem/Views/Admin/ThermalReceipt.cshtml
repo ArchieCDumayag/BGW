@@ -2,6 +2,7 @@
 @{
     ViewData["Title"] = "Thermal Receipt";
     var client = Model.Client;
+    var autoPrint = ViewBag.AutoPrint is true;
 }
 
 <style>
@@ -28,6 +29,15 @@
         </button>
     </div>
 </div>
+
+@if (autoPrint)
+{
+    <script>
+        window.addEventListener("load", function () {
+            window.print();
+        });
+    </script>
+}
 
 <div class="thermal-shell">
     <div class="thermal-receipt">

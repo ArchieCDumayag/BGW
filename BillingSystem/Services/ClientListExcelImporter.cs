@@ -13,6 +13,7 @@ public sealed record ClientListImportResult(
     int SkippedInvalid,
     int PaymentsImported,
     int MonthlyBillsImported,
+    int ReferralsImported,
     int UnmatchedPayments,
     string SavedFileName);
 
@@ -78,6 +79,8 @@ public static partial class ClientListExcelImporter
         data.Payments = history.Payments;
         data.MonthlyBillOverrides = history.MonthlyBillOverrides;
         data.PlanChanges = [];
+        data.Referrals.Clear();
+        var referralsImported = ReferralBillingService.ApplyReferralDiscounts(data, parsed.Clients);
 
         return new ClientListImportResult(
             parsed.TotalRows,
@@ -86,6 +89,7 @@ public static partial class ClientListExcelImporter
             parsed.SkippedInvalid,
             history.Payments.Count,
             history.MonthlyBillOverrides.Count,
+            referralsImported,
             history.UnmatchedPayments,
             savedFileName);
     }
@@ -110,6 +114,7 @@ public static partial class ClientListExcelImporter
             data.Clients.Add(client);
         }
         ApplyImportedProratedFirstBills(parsed.Clients, data.MonthlyBillOverrides, FallbackBillingMonth(importYear));
+        var referralsImported = ReferralBillingService.ApplyReferralDiscounts(data, parsed.Clients);
 
         return new ClientListImportResult(
             parsed.TotalRows,
@@ -118,6 +123,7 @@ public static partial class ClientListExcelImporter
             parsed.SkippedInvalid,
             0,
             0,
+            referralsImported,
             0,
             savedFileName);
     }
@@ -183,6 +189,17 @@ public static partial class ClientListExcelImporter
             var billingType = BillingTypeValue(GetAny(row, headers, "Type", "Billing Type", "BillingType", "Account Type"));
             var dateInstalled = DateValue(GetAny(row, headers, "Date Installed", "Date", "Installed", "Installation Date"));
             var planAmount = Money(Get(row, headers, "Plan"));
+            var referral = ReferralBillingService.NormalizeReferralText(Text(GetAny(
+                row,
+                headers,
+                "Referral",
+                "Refferal",
+                "Referal",
+                "Referred By",
+                "ReferredBy",
+                "Referral By",
+                "Referral Name",
+                "Client Referral")));
 
             clients.Add(new Client
             {
@@ -198,6 +215,7 @@ public static partial class ClientListExcelImporter
                 PppoeUsername = pppoe,
                 Contact = facebook,
                 FacebookAccount = facebook,
+                Referral = referral,
                 Balance = Money(Get(row, headers, "Balance")),
                 Advance = Money(Get(row, headers, "Advance")),
                 Bills = Money(Get(row, headers, "Bills")),
@@ -720,7 +738,7 @@ public static partial class ClientListExcelImporter
         var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         for (var index = 0; index < row.Count; index++)
         {
-            var header = Text(row[index]);
+            var header = Text(row[index]).Trim();
             if (!string.IsNullOrWhiteSpace(header) && !headers.ContainsKey(header))
             {
                 headers[header] = index;

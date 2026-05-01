@@ -180,6 +180,7 @@ public sealed class AdminController(
             TempData["ClientMessage"] =
                 $"Replaced client list from {savedFileName}: {result.Imported:N0} clients imported. " +
                 $"Imported {result.PaymentsImported:N0} payments and {result.MonthlyBillsImported:N0} monthly bills. " +
+                $"Referral details recorded: {result.ReferralsImported:N0}. " +
                 $"Unmatched payments: {result.UnmatchedPayments:N0}. " +
                 $"Skipped {result.SkippedDuplicate:N0} duplicate and {result.SkippedInvalid:N0} invalid rows.";
         }
@@ -286,7 +287,6 @@ public sealed class AdminController(
 
     private static void ClearClientOperationalRecords(BillingData data)
     {
-        data.Referrals.Clear();
         data.Jobs.Clear();
         data.PppoeUsers.Clear();
         data.TrafficSamples.Clear();
@@ -408,7 +408,7 @@ public sealed class AdminController(
         return View(model);
     }
 
-    public async Task<IActionResult> ThermalReceipt(int id)
+    public async Task<IActionResult> ThermalReceipt(int id, int? paymentId, bool autoPrint = false)
     {
         var data = await store.GetAsync();
         var client = data.Clients.FirstOrDefault(c => c.Id == id);
@@ -417,7 +417,13 @@ public sealed class AdminController(
             return NotFound();
         }
 
-        var model = BuildThermalReceiptModel(data, client);
+        if (paymentId.HasValue && data.Payments.All(payment => payment.Id != paymentId.Value || payment.ClientId != client.Id))
+        {
+            return NotFound();
+        }
+
+        ViewBag.AutoPrint = autoPrint;
+        var model = BuildThermalReceiptModel(data, client, paymentId);
         return View(model);
     }
 
@@ -525,7 +531,7 @@ public sealed class AdminController(
             client.DateInstalled ??= DateOnly.FromDateTime(DateTime.Today);
             client.Status = string.IsNullOrWhiteSpace(client.Status) ? "Active" : client.Status;
             client.BillingType = BillingRules.NormalizeBillingType(client.BillingType);
-            client.Referral = NormalizeReferralText(client.Referral);
+            client.Referral = ReferralBillingService.NormalizeReferralText(client.Referral);
             client.Bills = BillingRules.ProratedFirstBill(client.PlanAmount, client.DateInstalled.Value, client.BillingType);
             if (client.Balance <= 0)
             {
@@ -540,7 +546,7 @@ public sealed class AdminController(
                 client.Bills,
                 $"{client.BillingType} prorated first bill from installation date {client.DateInstalled.Value:MMM dd, yyyy}.");
 
-            var referralResult = ApplyReferralDiscount(data, client);
+            var referralResult = ReferralBillingService.ApplyReferralDiscount(data, client);
             if (!string.IsNullOrWhiteSpace(referralResult))
             {
                 TempData["ClientMessage"] = referralResult;
@@ -773,10 +779,15 @@ public sealed class AdminController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AddPayment(Payment payment, bool returnToCustomerAccount = false)
+    public async Task<IActionResult> AddPayment(Payment payment, bool returnToCustomerAccount = false, bool printThermal = false)
     {
         var data = await store.GetAsync();
         payment.Id = NextId(data.Payments.Select(p => p.Id));
+        if (string.IsNullOrWhiteSpace(payment.CollectedBy))
+        {
+            payment.CollectedBy = User.FindFirstValue("DisplayName") ?? User.Identity?.Name ?? "";
+        }
+
         data.Payments.Add(payment);
 
         var client = data.Clients.FirstOrDefault(c => c.Id == payment.ClientId);
@@ -791,6 +802,11 @@ public sealed class AdminController(
         }
 
         await store.SaveAsync(data);
+        if (printThermal && client is not null)
+        {
+            return RedirectToAction(nameof(ThermalReceipt), new { id = client.Id, paymentId = payment.Id, autoPrint = true });
+        }
+
         if (returnToCustomerAccount && client is not null)
         {
             TempData["CustomerAccountMessage"] = $"Payment recorded: PHP {payment.Amount:N0} for {client.Name}. Receipt OR-{payment.Id:000000}.";
@@ -2320,183 +2336,6 @@ public sealed class AdminController(
         return (lastNumber + 1).ToString(CultureInfo.InvariantCulture);
     }
 
-    private static string ApplyReferralDiscount(BillingData data, Client newClient)
-    {
-        var referralText = NormalizeReferralText(newClient.Referral);
-        if (referralText.Equals("INQUIRE", StringComparison.OrdinalIgnoreCase))
-        {
-            newClient.Referral = "INQUIRE";
-            return "";
-        }
-
-        var referrer = FindReferralClient(data.Clients, newClient);
-        if (referrer is null)
-        {
-            newClient.Referral = referralText;
-            return $"{newClient.Name} was added, but referral \"{referralText}\" did not match one existing client.";
-        }
-
-        newClient.Referral = ReferralOptionText(referrer);
-        var installedOn = newClient.DateInstalled ?? DateOnly.FromDateTime(DateTime.Today);
-        var discountStartMonth = new DateOnly(installedOn.Year, installedOn.Month, 1).AddMonths(1);
-        var discountCredit = Math.Round(referrer.PlanAmount / 2, 2, MidpointRounding.AwayFromZero);
-        if (discountCredit <= 0)
-        {
-            return $"{newClient.Name} was added with referral to {referrer.Name}, but no discount was applied because the referrer has no plan amount.";
-        }
-
-        var remainingCredit = discountCredit;
-        var appliedNotes = new List<string>();
-        var discountMonth = discountStartMonth;
-        var referrerPlanChanges = data.PlanChanges.Where(change => change.ClientId == referrer.Id).ToList();
-
-        for (var guard = 0; guard < 120 && remainingCredit > 0; guard++)
-        {
-            var plannedBill = PlanAmountForBillingMonth(referrer, discountMonth, referrerPlanChanges);
-            if (plannedBill <= 0)
-            {
-                plannedBill = referrer.PlanAmount > 0 ? referrer.PlanAmount : referrer.Bills;
-            }
-
-            if (plannedBill <= 0)
-            {
-                break;
-            }
-
-            var existingBill = MonthlyBillOverrideFor(referrer, discountMonth, data.MonthlyBillOverrides);
-            var currentBill = existingBill?.BillAmount ?? plannedBill;
-            if (currentBill <= 0)
-            {
-                discountMonth = discountMonth.AddMonths(1);
-                continue;
-            }
-
-            var appliedDiscount = Math.Min(remainingCredit, currentBill);
-            var note = $"Referral discount PHP {appliedDiscount:N0} for referring {newClient.Name}.";
-            ApplyMonthlyReferralDiscount(data, referrer.Id, discountMonth, currentBill - appliedDiscount, appliedDiscount, note);
-            appliedNotes.Add($"{discountMonth:MMM yyyy}: PHP {appliedDiscount:N0}");
-            remainingCredit -= appliedDiscount;
-            discountMonth = discountMonth.AddMonths(1);
-        }
-
-        var appliedAmount = discountCredit - remainingCredit;
-        data.Referrals.Add(new ClientReferral
-        {
-            Id = NextId(data.Referrals.Select(referral => referral.Id)),
-            ReferrerClientId = referrer.Id,
-            NewClientId = newClient.Id,
-            ReferrerName = referrer.Name,
-            NewClientName = newClient.Name,
-            ReferralText = newClient.Referral,
-            DiscountStartMonth = discountStartMonth,
-            DiscountAmount = discountCredit,
-            AppliedAmount = appliedAmount,
-            RecordedAt = DateTime.Now,
-            Remarks = appliedNotes.Count == 0 ? "No discount was applied." : string.Join("; ", appliedNotes)
-        });
-
-        return appliedAmount > 0
-            ? $"{newClient.Name} was added. {referrer.Name} gets PHP {appliedAmount:N0} referral discount starting {discountStartMonth:MMMM yyyy}."
-            : $"{newClient.Name} was added with referral to {referrer.Name}, but no bill was available for discount yet.";
-    }
-
-    private static void ApplyMonthlyReferralDiscount(
-        BillingData data,
-        int clientId,
-        DateOnly billingMonth,
-        decimal billAmount,
-        decimal discountAmount,
-        string note)
-    {
-        var existing = data.MonthlyBillOverrides
-            .Where(overrideBill => overrideBill.ClientId == clientId && overrideBill.BillingMonth == billingMonth)
-            .OrderByDescending(overrideBill => overrideBill.Id)
-            .FirstOrDefault();
-
-        if (existing is not null)
-        {
-            existing.BillAmount = Math.Max(0, billAmount);
-            existing.DiscountAmount += discountAmount;
-            existing.DiscountRemarks = AppendNote(existing.DiscountRemarks, note);
-            existing.RecordedAt = DateTime.Now;
-            return;
-        }
-
-        data.MonthlyBillOverrides.Add(new ClientMonthlyBillOverride
-        {
-            Id = NextId(data.MonthlyBillOverrides.Select(overrideBill => overrideBill.Id)),
-            ClientId = clientId,
-            BillingMonth = billingMonth,
-            BillAmount = Math.Max(0, billAmount),
-            DiscountAmount = discountAmount,
-            DiscountRemarks = note,
-            RecordedAt = DateTime.Now,
-            Remarks = ""
-        });
-    }
-
-    private static Client? FindReferralClient(IEnumerable<Client> clients, Client newClient)
-    {
-        var referralText = NormalizeReferralText(newClient.Referral);
-        if (referralText.Equals("INQUIRE", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var candidates = clients.Where(client => client.Id != newClient.Id).ToList();
-        var optionMatch = candidates.FirstOrDefault(client =>
-            ReferralOptionText(client).Equals(referralText, StringComparison.OrdinalIgnoreCase));
-        if (optionMatch is not null)
-        {
-            return optionMatch;
-        }
-
-        var accountText = referralText.Split('-', 2)[0].Trim();
-        var accountMatch = candidates.FirstOrDefault(client =>
-            (client.AccountNumber ?? "").Equals(accountText, StringComparison.OrdinalIgnoreCase));
-        if (accountMatch is not null)
-        {
-            return accountMatch;
-        }
-
-        var exactNameMatches = candidates
-            .Where(client => (client.Name ?? "").Equals(referralText, StringComparison.OrdinalIgnoreCase))
-            .Take(2)
-            .ToList();
-        if (exactNameMatches.Count == 1)
-        {
-            return exactNameMatches[0];
-        }
-
-        var partialNameMatches = candidates
-            .Where(client => (client.Name ?? "").Contains(referralText, StringComparison.OrdinalIgnoreCase))
-            .Take(2)
-            .ToList();
-        return partialNameMatches.Count == 1 ? partialNameMatches[0] : null;
-    }
-
-    private static string NormalizeReferralText(string? referral)
-    {
-        return string.IsNullOrWhiteSpace(referral) ? "INQUIRE" : referral.Trim();
-    }
-
-    private static string ReferralOptionText(Client client)
-    {
-        return $"{client.AccountNumber} - {client.Name}".Trim();
-    }
-
-    private static string AppendNote(string? existing, string note)
-    {
-        if (string.IsNullOrWhiteSpace(existing))
-        {
-            return note;
-        }
-
-        return existing.Contains(note, StringComparison.OrdinalIgnoreCase)
-            ? existing
-            : $"{existing} {note}";
-    }
-
     private static int AccountSortKey(string accountNumber)
     {
         return int.TryParse(accountNumber, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)
@@ -2622,7 +2461,7 @@ public sealed class AdminController(
         };
     }
 
-    private static ThermalReceiptViewModel BuildThermalReceiptModel(BillingData data, Client client)
+    private static ThermalReceiptViewModel BuildThermalReceiptModel(BillingData data, Client client, int? paymentId = null)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
         var payments = data.Payments
@@ -2630,7 +2469,10 @@ public sealed class AdminController(
             .OrderByDescending(payment => payment.PaidOn)
             .ThenByDescending(payment => payment.Id)
             .ToList();
-        var latestPayment = payments.FirstOrDefault();
+        var latestPayment = paymentId.HasValue
+            ? payments.FirstOrDefault(payment => payment.Id == paymentId.Value)
+            : null;
+        latestPayment ??= payments.FirstOrDefault();
         var receiptDate = latestPayment?.PaidOn ?? today;
         var paymentMonth = new DateOnly(receiptDate.Year, receiptDate.Month, 1);
         var monthPayments = payments
@@ -2799,6 +2641,7 @@ public sealed class AdminController(
                 var previousBalance = WholeNumberPart(PreviousBalanceForMonth(data, client, month));
                 var previousAdvance = WholeNumberPart(PreviousAdvanceForMonth(data, client, month));
                 var referralDiscount = WholeNumberPart(ReferralDiscountForMonth(data, client, month));
+                var referralNames = ReferralNamesForMonth(data, client, month);
                 var currentBill = WholeNumberPart(PaymentPageBillAmountForMonth(data, client, month));
                 var paidThisMonth = data.Payments
                     .Where(payment => payment.ClientId == client.Id
@@ -2816,6 +2659,7 @@ public sealed class AdminController(
                     DueDate = DueDateForBillingMonth(client, month),
                     PreviousBalance = previousBalance,
                     ReferralDiscount = referralDiscount,
+                    ReferralNames = referralNames,
                     CurrentBill = currentBill,
                     PaidThisMonth = paidThisMonth,
                     Balance = balance,
@@ -2866,6 +2710,32 @@ public sealed class AdminController(
             month,
             data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id));
         return billOverride?.DiscountAmount ?? 0;
+    }
+
+    private static string ReferralNamesForMonth(BillingData data, Client client, DateOnly month)
+    {
+        var referrals = data.Referrals
+            .Where(referral => referral.ReferrerClientId == client.Id)
+            .ToList();
+        if (referrals.Count == 0)
+        {
+            return "";
+        }
+
+        var billOverride = MonthlyBillOverrideFor(
+            client,
+            month,
+            data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id));
+        var discountRemarks = billOverride?.DiscountRemarks ?? "";
+        var monthLabel = month.ToString("MMM yyyy", CultureInfo.InvariantCulture);
+
+        return JoinDistinct(referrals
+            .Where(referral =>
+                (!string.IsNullOrWhiteSpace(referral.NewClientName)
+                    && discountRemarks.Contains(referral.NewClientName, StringComparison.OrdinalIgnoreCase))
+                || referral.Remarks.Contains(monthLabel, StringComparison.OrdinalIgnoreCase)
+                || referral.DiscountStartMonth == month)
+            .Select(referral => referral.NewClientName));
     }
 
     private static decimal PreviousBalanceForMonth(BillingData data, Client client, DateOnly month)

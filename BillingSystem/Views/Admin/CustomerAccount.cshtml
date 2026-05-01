@@ -28,6 +28,7 @@
         ? suggestedPaymentAmount.ToString("0.##", invariantCulture)
         : "";
     var paymentDateValue = DateTime.Today.ToString("yyyy-MM-dd", invariantCulture);
+    var collectorName = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
 }
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -101,7 +102,7 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Collected by</label>
-                        <input class="form-control" name="CollectedBy" />
+                        <input class="form-control" name="CollectedBy" value="@collectorName" readonly />
                     </div>
                     <div class="col-12">
                         <label class="form-label">Remarks</label>
@@ -123,6 +124,10 @@
                 </div>
             </div>
             <div class="modal-footer">
+                <div class="form-check me-auto">
+                    <input class="form-check-input" id="customerPrintThermalAfterPayment" name="printThermal" type="checkbox" value="true" />
+                    <label class="form-check-label" for="customerPrintThermalAfterPayment">Print thermal after saving</label>
+                </div>
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button class="btn btn-primary">
                     <i class="ti ti-cash me-1"></i>Save payment

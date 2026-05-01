@@ -594,6 +594,7 @@ public sealed class ClientCurrentBillRow
     public DateOnly DueDate { get; init; }
     public decimal PreviousBalance { get; init; }
     public decimal ReferralDiscount { get; init; }
+    public string ReferralNames { get; init; } = "";
     public decimal CurrentBill { get; init; }
     public decimal PaidThisMonth { get; init; }
     public decimal Balance { get; init; }
