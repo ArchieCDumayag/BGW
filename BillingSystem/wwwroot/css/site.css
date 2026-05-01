@@ -88,6 +88,46 @@ html {
   white-space: nowrap;
 }
 
+.payments-client-list-table {
+  color: var(--tblr-secondary-color);
+  font-size: .8125rem;
+}
+
+.payments-client-list-table > :not(caption) > * > * {
+  padding-top: .35rem;
+  padding-bottom: .35rem;
+}
+
+.payments-client-list-table .badge {
+  font-size: .6875rem;
+}
+
+.payments-client-list-header {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px) minmax(0, 1fr);
+  align-items: center;
+}
+
+.payments-client-list-search {
+  justify-self: center;
+  width: min(100%, 320px);
+}
+
+.payments-client-list-month {
+  justify-self: end;
+}
+
+@media (max-width: 767.98px) {
+  .payments-client-list-header {
+    grid-template-columns: 1fr;
+  }
+
+  .payments-client-list-title,
+  .payments-client-list-search,
+  .payments-client-list-month {
+    justify-self: stretch;
+  }
+}
+
 .collection-stack {
   height: 2.75rem;
 }
