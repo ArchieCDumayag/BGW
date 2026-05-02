@@ -361,6 +361,13 @@ public sealed class AdminController(
             return NotFound();
         }
 
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var currentMonth = new DateOnly(today.Year, today.Month, 1);
+        if (EnsureGeneratedBillsThroughMonth(data, currentMonth) > 0)
+        {
+            await store.SaveAsync(data);
+        }
+
         var payments = data.Payments
             .Where(p => p.ClientId == id)
             .OrderByDescending(p => p.PaidOn)
@@ -377,13 +384,12 @@ public sealed class AdminController(
             .ThenByDescending(overrideBill => overrideBill.Id)
             .ToList();
 
-        var allBillingMonths = BuildCustomerBillingMonths(client, payments, planChanges, monthlyBillOverrides);
+        var allBillingMonths = BuildCustomerBillingMonths(data, client, payments, planChanges, monthlyBillOverrides);
         var availableYears = allBillingMonths
             .Select(month => month.Month.Year)
             .Distinct()
             .OrderByDescending(value => value)
             .ToList();
-        var today = DateOnly.FromDateTime(DateTime.Today);
         var selectedYear = year is int requestedYear && availableYears.Contains(requestedYear)
             ? requestedYear
             : today.Year;
@@ -397,7 +403,7 @@ public sealed class AdminController(
         {
             Client = client,
             BillingRule = BillingRules.ForClient(client),
-            CurrentBalance = client.Balance,
+            CurrentBalance = allBillingMonths.FirstOrDefault(month => month.Month == currentMonth)?.RemainingBalance ?? client.Balance,
             PlanChanges = planChanges,
             MonthlyBillOverrides = monthlyBillOverrides,
             BillingMonths = allBillingMonths.Where(month => month.Month.Year == selectedYear).ToList(),
@@ -691,6 +697,11 @@ public sealed class AdminController(
         var today = DateOnly.FromDateTime(DateTime.Today);
         var currentMonth = new DateOnly(today.Year, today.Month, 1);
         var selectedMonth = ParseMonth(month) ?? currentMonth;
+        if (selectedMonth == currentMonth && EnsureGeneratedBillsThroughMonth(data, currentMonth) > 0)
+        {
+            await store.SaveAsync(data);
+        }
+
         ViewBag.Clients = data.Clients.OrderBy(c => c.Name).ToList();
         ViewBag.ClientMap = data.Clients.ToDictionary(c => c.Id);
         ViewBag.ClientBillingRules = data.Clients.ToDictionary(c => c.Id, c => BillingRules.ForClient(c));
@@ -2710,7 +2721,7 @@ public sealed class AdminController(
             .OrderByDescending(overrideBill => overrideBill.BillingMonth)
             .ThenByDescending(overrideBill => overrideBill.Id)
             .ToList();
-        var billingMonths = BuildCustomerBillingMonths(client, payments, planChanges, monthlyBillOverrides);
+        var billingMonths = BuildCustomerBillingMonths(data, client, payments, planChanges, monthlyBillOverrides);
         var currentBillingMonth = billingMonths.FirstOrDefault(month => month.Month == currentMonth)
             ?? billingMonths.OrderByDescending(month => month.Month).FirstOrDefault()
             ?? new CustomerBillingMonth
@@ -2810,7 +2821,7 @@ public sealed class AdminController(
             .ToList();
         var planChanges = data.PlanChanges.Where(change => change.ClientId == client.Id).ToList();
         var monthlyBillOverrides = data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id).ToList();
-        var billingMonth = BuildCustomerBillingMonths(client, payments, planChanges, monthlyBillOverrides)
+        var billingMonth = BuildCustomerBillingMonths(data, client, payments, planChanges, monthlyBillOverrides)
             .FirstOrDefault(month => month.Month == paymentMonth);
         var planAmount = MonthlyPlanAmount(client, paymentMonth, monthPayments, planChanges);
         var previousBalance = billingMonth?.Balance ?? client.Balance;
@@ -2871,12 +2882,15 @@ public sealed class AdminController(
     }
 
     private static IReadOnlyList<CustomerBillingMonth> BuildCustomerBillingMonths(
+        BillingData data,
         Client client,
         IReadOnlyList<Payment> payments,
         IReadOnlyList<ClientPlanChange> planChanges,
         IReadOnlyList<ClientMonthlyBillOverride> monthlyBillOverrides)
     {
-        var months = CustomerBillingHistoryMonths(client, payments, monthlyBillOverrides);
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var currentMonth = new DateOnly(today.Year, today.Month, 1);
+        var months = CustomerBillingHistoryMonths(client, payments, monthlyBillOverrides, currentMonth);
 
         var rows = new List<CustomerBillingMonth>();
         var carriedBalance = 0m;
@@ -2900,9 +2914,8 @@ public sealed class AdminController(
             var endingAdvance = billOverride is null
                 ? Math.Max(0, openingAdvance + amountPaid - openingBalance - planAmount)
                 : Math.Max(0, amountPaid - billAmount);
-            var status = billAmount <= 0 ? "No bill" :
-                endingBalance <= 0 ? "Paid" :
-                amountPaid > 0 ? "Partial" : "Unpaid";
+            var referralDiscount = ReferralDiscountForMonth(data, client, month);
+            var status = BillingPaymentStatus(billAmount, amountPaid);
 
             rows.Add(new CustomerBillingMonth
             {
@@ -2913,6 +2926,9 @@ public sealed class AdminController(
                 AmountPaid = amountPaid,
                 Balance = openingBalance,
                 Advance = openingAdvance,
+                RemainingBalance = DisplayPesoAmount(endingBalance),
+                ReferralDiscount = referralDiscount,
+                ReferralNames = ReferralNamesForMonth(data, client, month),
                 DiscountAmount = billOverride?.DiscountAmount ?? 0,
                 DiscountNote = billOverride?.DiscountRemarks ?? "",
                 Status = status,
@@ -2977,9 +2993,7 @@ public sealed class AdminController(
                         && payment.PaidOn.Month == month.Month)
                     .Sum(payment => payment.Amount);
                 var balance = Math.Max(0, currentBill - paidThisMonth);
-                var status = currentBill <= 0 ? "No bill" :
-                    paidThisMonth >= currentBill ? "Paid" :
-                    paidThisMonth > 0 ? "Partial" : "Unpaid";
+                var status = BillingPaymentStatus(currentBill, paidThisMonth);
 
                 return new ClientCurrentBillRow
                 {
@@ -3005,6 +3019,118 @@ public sealed class AdminController(
             month,
             data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id));
         return billOverride?.BillAmount ?? client.Bills;
+    }
+
+    private static int EnsureGeneratedBillsThroughMonth(BillingData data, DateOnly currentMonth)
+    {
+        var nextId = NextId(data.MonthlyBillOverrides.Select(overrideBill => overrideBill.Id));
+        var created = 0;
+
+        foreach (var client in data.Clients)
+        {
+            var clientPayments = data.Payments
+                .Where(payment => payment.ClientId == client.Id)
+                .OrderBy(payment => payment.PaidOn)
+                .ThenBy(payment => payment.Id)
+                .ToList();
+            var clientOverrides = data.MonthlyBillOverrides
+                .Where(overrideBill => overrideBill.ClientId == client.Id)
+                .OrderBy(overrideBill => overrideBill.BillingMonth)
+                .ThenBy(overrideBill => overrideBill.Id)
+                .ToList();
+            var months = CustomerBillingHistoryMonths(client, clientPayments, clientOverrides, currentMonth);
+            var carriedBalance = 0m;
+            var carriedAdvance = 0m;
+
+            foreach (var month in months)
+            {
+                var monthPayments = clientPayments
+                    .Where(payment => payment.PaidOn.Year == month.Year && payment.PaidOn.Month == month.Month)
+                    .ToList();
+                var amountPaid = monthPayments.Sum(payment => payment.Amount);
+                var existingBill = MonthlyBillOverrideFor(
+                    client,
+                    month,
+                    data.MonthlyBillOverrides.Where(overrideBill => overrideBill.ClientId == client.Id));
+
+                decimal openingBalance;
+                decimal openingAdvance;
+                decimal billAmount;
+                decimal endingBalance;
+                decimal endingAdvance;
+
+                if (existingBill is not null)
+                {
+                    openingBalance = existingBill.Balance ?? carriedBalance;
+                    openingAdvance = existingBill.Advance ?? carriedAdvance;
+                    billAmount = existingBill.BillAmount;
+                    endingBalance = Math.Max(0, billAmount - amountPaid);
+                    endingAdvance = Math.Max(0, amountPaid - billAmount);
+                }
+                else
+                {
+                    openingBalance = carriedBalance;
+                    openingAdvance = carriedAdvance;
+                    var planAmount = GeneratedPlanAmountForMonth(data, client, month);
+                    billAmount = Math.Max(0, openingBalance - openingAdvance + planAmount);
+                    endingBalance = Math.Max(0, openingBalance + planAmount - openingAdvance - amountPaid);
+                    endingAdvance = Math.Max(0, openingAdvance + amountPaid - openingBalance - planAmount);
+
+                    if (billAmount > 0 || openingBalance > 0 || openingAdvance > 0)
+                    {
+                        data.MonthlyBillOverrides.Add(new ClientMonthlyBillOverride
+                        {
+                            Id = nextId++,
+                            ClientId = client.Id,
+                            BillingMonth = month,
+                            BillAmount = billAmount,
+                            Balance = openingBalance,
+                            Advance = openingAdvance,
+                            RecordedAt = DateTime.Now,
+                            Remarks = $"Auto-generated {month:MMMM yyyy} bill from client plan and imported payments."
+                        });
+                        created++;
+                    }
+                }
+
+                carriedBalance = endingBalance;
+                carriedAdvance = endingAdvance;
+            }
+        }
+
+        return created;
+    }
+
+    private static decimal GeneratedPlanAmountForMonth(BillingData data, Client client, DateOnly currentMonth)
+    {
+        if (client.DateInstalled is DateOnly futureInstalled
+            && new DateOnly(futureInstalled.Year, futureInstalled.Month, 1) > currentMonth)
+        {
+            return 0;
+        }
+
+        if (NormalizeClientStatus(client.Status).Equals("DC", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        var planAmount = PlanAmountForBillingMonth(
+            client,
+            currentMonth,
+            data.PlanChanges.Where(change => change.ClientId == client.Id));
+        if (planAmount <= 0)
+        {
+            planAmount = client.PlanAmount > 0 ? client.PlanAmount : client.Bills;
+        }
+
+        if (client.DateInstalled is DateOnly installed
+            && installed.Year == currentMonth.Year
+            && installed.Month == currentMonth.Month)
+        {
+            return BillingRules.ProratedFirstBill(planAmount, installed, client.BillingType);
+        }
+
+        return planAmount;
     }
 
     private static decimal PreviousAdvanceForMonth(BillingData data, Client client, DateOnly month)
@@ -3118,6 +3244,29 @@ public sealed class AdminController(
         return decimal.Truncate(amount);
     }
 
+    private static string BillingPaymentStatus(decimal billAmount, decimal amountPaid)
+    {
+        var displayedBillAmount = DisplayPesoAmount(billAmount);
+        var displayedAmountPaid = DisplayPesoAmount(amountPaid);
+
+        if (displayedBillAmount <= 0)
+        {
+            return "No bill";
+        }
+
+        if (displayedAmountPaid >= displayedBillAmount)
+        {
+            return "Paid";
+        }
+
+        return displayedAmountPaid <= 0 ? "Unpaid" : "Balance";
+    }
+
+    private static decimal DisplayPesoAmount(decimal amount)
+    {
+        return Math.Round(amount, 0, MidpointRounding.AwayFromZero);
+    }
+
     private static ClientMonthlyBillOverride? MonthlyBillOverrideFor(
         Client client,
         DateOnly month,
@@ -3181,29 +3330,50 @@ public sealed class AdminController(
 
     private static DateOnly CustomerBillingStartMonth(Client client, IReadOnlyList<Payment> payments, DateOnly currentMonth)
     {
-        var startMonth = client.DateInstalled is DateOnly installed
-            ? new DateOnly(installed.Year, installed.Month, 1)
-            : payments.Count > 0
-                ? new DateOnly(payments.Min(p => p.PaidOn).Year, payments.Min(p => p.PaidOn).Month, 1)
-                : currentMonth.AddMonths(-11);
+        return CustomerBillingStartMonth(client, payments, Array.Empty<ClientMonthlyBillOverride>(), currentMonth);
+    }
 
+    private static DateOnly CustomerBillingStartMonth(
+        Client client,
+        IReadOnlyList<Payment> payments,
+        IReadOnlyList<ClientMonthlyBillOverride> monthlyBillOverrides,
+        DateOnly currentMonth)
+    {
+        var candidates = new List<DateOnly>();
+        if (client.DateInstalled is DateOnly installed)
+        {
+            candidates.Add(new DateOnly(installed.Year, installed.Month, 1));
+        }
+
+        if (payments.Count > 0)
+        {
+            var firstPayment = payments.Min(payment => payment.PaidOn);
+            candidates.Add(new DateOnly(firstPayment.Year, firstPayment.Month, 1));
+        }
+
+        if (monthlyBillOverrides.Count > 0)
+        {
+            candidates.Add(monthlyBillOverrides.Min(overrideBill => overrideBill.BillingMonth));
+        }
+
+        var startMonth = candidates.Count == 0 ? currentMonth : candidates.Min();
         return startMonth > currentMonth ? currentMonth : startMonth;
     }
 
     private static IReadOnlyList<DateOnly> CustomerBillingHistoryMonths(
         Client client,
         IReadOnlyList<Payment> payments,
-        IReadOnlyList<ClientMonthlyBillOverride> monthlyBillOverrides)
+        IReadOnlyList<ClientMonthlyBillOverride> monthlyBillOverrides,
+        DateOnly currentMonth)
     {
-        return payments
-            .Where(payment => payment.ClientId == client.Id)
-            .Select(payment => new DateOnly(payment.PaidOn.Year, payment.PaidOn.Month, 1))
-            .Concat(monthlyBillOverrides
-                .Where(overrideBill => overrideBill.ClientId == client.Id)
-                .Select(overrideBill => overrideBill.BillingMonth))
-            .Distinct()
-            .Order()
-            .ToList();
+        var startMonth = CustomerBillingStartMonth(client, payments, monthlyBillOverrides, currentMonth);
+        var months = new List<DateOnly>();
+        for (var month = startMonth; month <= currentMonth; month = month.AddMonths(1))
+        {
+            months.Add(month);
+        }
+
+        return months;
     }
 
     private static void EnsurePlanBaseline(BillingData data, Client client, IReadOnlyList<Payment> payments)

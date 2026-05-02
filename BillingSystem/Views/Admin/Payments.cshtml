@@ -193,7 +193,7 @@
                 {
                     var client = row.Client;
                     var statusClass = row.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" :
-                        row.Status.Equals("Partial", StringComparison.OrdinalIgnoreCase) ? "bg-yellow-lt" :
+                        row.Status.Equals("Balance", StringComparison.OrdinalIgnoreCase) ? "bg-yellow-lt" :
                         row.Status.Equals("Unpaid", StringComparison.OrdinalIgnoreCase) ? "bg-red-lt" : "bg-secondary-lt";
                     var clientStatus = ClientStatusLabel(client);
                     var clientStatusClass = ClientStatusBadgeClass(clientStatus);

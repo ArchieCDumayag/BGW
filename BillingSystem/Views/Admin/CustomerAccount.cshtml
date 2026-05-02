@@ -316,10 +316,13 @@
                 <thead class="table-light">
                     <tr>
                         <th>Month</th>
-                        <th class="text-end">Balance</th>
+                        <th class="text-end">Previous balance</th>
                         <th class="text-end">Advance</th>
-                        <th class="text-end">Current bill</th>
-                        <th class="text-end">Total paid</th>
+                        <th class="text-end">Referral</th>
+                        <th class="text-end">Bills</th>
+                        <th class="text-end">Amount paid</th>
+                        <th class="text-end">Balance</th>
+                        <th>Status</th>
                         <th>Method</th>
                         <th>Reference</th>
                         <th>Remarks</th>
@@ -336,10 +339,27 @@
                     var paymentBreakdownTooltip = bill.PaymentBreakdown.Count == 0
                         ? "No payment breakdown"
                         : string.Join(" | ", bill.PaymentBreakdown.Select(payment => $"{payment.PaidOn:MMM dd, yyyy}: PHP {payment.Amount:N0}"));
+                    var billStatusClass = bill.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase) ? "bg-green-lt" :
+                        bill.Status.Equals("Balance", StringComparison.OrdinalIgnoreCase) ? "bg-yellow-lt" :
+                        bill.Status.Equals("Unpaid", StringComparison.OrdinalIgnoreCase) ? "bg-red-lt" : "bg-secondary-lt";
                     <tr>
                         <td class="fw-medium">@bill.MonthLabel</td>
                         <td class="text-end">PHP @bill.Balance.ToString("N0")</td>
                         <td class="text-end">@(bill.Advance > 0 ? $"PHP {bill.Advance:N0}" : "-")</td>
+                        <td class="text-end">
+                            @if (bill.ReferralDiscount > 0 || !string.IsNullOrWhiteSpace(bill.ReferralNames))
+                            {
+                                <div>@(bill.ReferralDiscount > 0 ? $"PHP {bill.ReferralDiscount:N0}" : "-")</div>
+                                @if (!string.IsNullOrWhiteSpace(bill.ReferralNames))
+                                {
+                                    <div class="small text-secondary">@bill.ReferralNames</div>
+                                }
+                            }
+                            else
+                            {
+                                <span>-</span>
+                            }
+                        </td>
                         <td class="text-end">
                             <div class="d-flex justify-content-end align-items-center gap-2">
                                 <span class="fw-semibold">PHP @bill.BillAmount.ToString("N0")</span>
@@ -382,6 +402,8 @@
                                 PHP @bill.AmountPaid.ToString("N0")
                             </span>
                         </td>
+                        <td class="text-end">@(bill.RemainingBalance > 0 ? $"PHP {bill.RemainingBalance:N0}" : "-")</td>
+                        <td><span class="badge @billStatusClass">@bill.Status</span></td>
                         <td>@bill.Methods</td>
                         <td>@bill.References</td>
                         <td class="small text-secondary">@bill.Remarks</td>

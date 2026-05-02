@@ -433,6 +433,9 @@ public sealed class CustomerBillingMonth
     public decimal AmountPaid { get; init; }
     public decimal Balance { get; init; }
     public decimal Advance { get; init; }
+    public decimal RemainingBalance { get; init; }
+    public decimal ReferralDiscount { get; init; }
+    public string ReferralNames { get; init; } = "";
     public decimal DiscountAmount { get; init; }
     public string DiscountNote { get; init; } = "";
     public string Status { get; init; } = "";
