@@ -554,11 +554,18 @@ public sealed class AdminController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SaveClient(Client client)
+    public async Task<IActionResult> SaveClient(Client client, string? firstName, string? middleName, string? lastName)
     {
         var data = await store.GetAsync();
         if (client.Id == 0)
         {
+            client.Name = BuildClientName(firstName, middleName, lastName, client.Name);
+            if (string.IsNullOrWhiteSpace(client.Name))
+            {
+                TempData["ClientError"] = "Client name is required.";
+                return RedirectToAction(nameof(Clients));
+            }
+
             client.Id = NextId(data.Clients.Select(c => c.Id));
             client.AccountNumber = NextAccountNumber(data.Clients);
             client.DateInstalled ??= DateOnly.FromDateTime(DateTime.Today);
@@ -2680,6 +2687,18 @@ public sealed class AdminController(
         return int.TryParse(accountNumber, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)
             ? number
             : int.MaxValue;
+    }
+
+    private static string BuildClientName(string? firstName, string? middleName, string? lastName, string? fallback)
+    {
+        var parts = new[] { firstName, middleName, lastName }
+            .Select(part => part?.Trim() ?? "")
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .ToList();
+
+        return parts.Count == 0
+            ? fallback?.Trim() ?? ""
+            : string.Join(" ", parts);
     }
 
     private static string DeleteCaptchaQuestion(Client client) => $"{DeleteCaptchaNumberA(client)} + {DeleteCaptchaNumberB(client)}";

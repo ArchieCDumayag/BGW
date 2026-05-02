@@ -102,7 +102,15 @@ public static class ReferralBillingService
 
     public static string NormalizeReferralText(string? referral)
     {
-        return string.IsNullOrWhiteSpace(referral) ? "INQUIRE" : referral.Trim();
+        if (string.IsNullOrWhiteSpace(referral))
+        {
+            return "INQUIRE";
+        }
+
+        var value = referral.Trim();
+        return value.Equals("None", StringComparison.OrdinalIgnoreCase)
+            ? "INQUIRE"
+            : value;
     }
 
     private static void ApplyMonthlyReferralDiscount(

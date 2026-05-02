@@ -39,7 +39,7 @@ public static class BillingRules
                 : dueDate.AddDays(-1);
         var daysInMonth = DateTime.DaysInMonth(installedOn.Year, installedOn.Month);
         var billableDays = Math.Max(0, cycleEnd.Day - installedOn.Day + 1);
-        return Math.Round(planAmount / daysInMonth * billableDays, 2, MidpointRounding.AwayFromZero);
+        return decimal.Truncate(planAmount / daysInMonth * billableDays);
     }
 
     public static DateOnly FirstBillDueDate(DateOnly installedOn, string? billingType)
